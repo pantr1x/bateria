@@ -104,6 +104,7 @@ func Run() error {
 		}
 		a.cfg = config.Load(p)
 	}
+	a.est.RestoreDrain(a.cfg.DrainPerHour, a.cfg.DrainUsesCapacity)
 	app = a
 
 	inst := win.ModuleHandle()
@@ -222,6 +223,7 @@ func trayWndProc(hwnd win.HWND, msg uint32, wparam, lparam uintptr) uintptr {
 		return 1
 
 	case win.WMDestroy:
+		a.saveDrain()
 		a.tray.Remove()
 		win.PostQuit(0)
 		return 0
@@ -291,8 +293,14 @@ func (a *App) applyReading() {
 	if !ok {
 		return
 	}
+	prev := a.status.State
 	a.est.Update(&st)
 	a.status = st
+	// Rýchlosť vybíjania si uložíme, keď beh na batérii skončí – vtedy je
+	// údaj čerstvý a po ďalšom štarte netreba čakať, kým sa naučí znova.
+	if prev == battery.StateDischarging && st.State != battery.StateDischarging {
+		a.saveDrain()
+	}
 	a.updateIcon()
 	if a.popup != nil && a.popup.visible {
 		a.popup.refresh()
@@ -304,10 +312,7 @@ func (a *App) applyReading() {
 func (a *App) updateIcon() {
 	size := trayIconSize()
 	light := win.TaskbarUsesLightTheme()
-	remaining := time.Duration(0)
-	if _, d, ok := a.status.Remaining(); ok {
-		remaining = d.Round(time.Minute)
-	}
+	remaining := iconRemaining(a.status).Round(time.Minute)
 	key := fmt.Sprintf("%d|%v|%s|%d|%v|%v|%v", size, light, a.cfg.IconMode,
 		int(math.Round(a.status.Percent)), a.status.State == battery.StateCharging,
 		a.status.Present, remaining)
@@ -332,9 +337,7 @@ func iconImage(st battery.Status, size int32, mode string, light bool) *image.NR
 		Size: int(size), Theme: theme, Percent: st.Percent,
 		Charging: st.State == battery.StateCharging, Present: st.Present,
 	}
-	if _, d, ok := st.Remaining(); ok {
-		spec.Remaining = d
-	}
+	spec.Remaining = iconRemaining(st)
 	switch mode {
 	case config.IconTime:
 		spec.Mode = icon.ModeTime
@@ -347,6 +350,16 @@ func iconImage(st battery.Status, size int32, mode string, light bool) *image.NR
 		// Písmo symbolov v systéme nie je (staršie Windows) – nakreslíme vlastnú.
 	}
 	return icon.Render(spec)
+}
+
+// iconRemaining je čas, ktorý sa vypíše do ikony. Keď je počítač v sieti
+// a batéria plná, žiadny „zostávajúci čas“ neexistuje – vtedy má najväčšiu
+// cenu odhad, ako dlho by počítač vydržal po odpojení.
+func iconRemaining(st battery.Status) time.Duration {
+	if _, d, ok := st.Remaining(); ok {
+		return d
+	}
+	return st.RuntimeOnBattery
 }
 
 // systemIcon vykreslí ten istý znak, akým kreslí ikonu batérie samotný
@@ -529,6 +542,16 @@ func (a *App) promoteIcon(interactive bool) {
 			msg+"\n\nAk sa zmena neprejaví hneď, stačí sa odhlásiť a znova "+
 				"prihlásiť do Windowsu.", win.MBIconInfo)
 	}
+}
+
+// saveDrain uloží zapamätanú rýchlosť vybíjania do nastavení.
+func (a *App) saveDrain() {
+	perHour, usesCap, ok := a.est.Drain()
+	if !ok || (a.cfg.DrainPerHour == perHour && a.cfg.DrainUsesCapacity == usesCap) {
+		return
+	}
+	a.cfg.DrainPerHour, a.cfg.DrainUsesCapacity = perHour, usesCap
+	a.saveConfig()
 }
 
 func (a *App) saveConfig() {

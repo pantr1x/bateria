@@ -25,6 +25,11 @@ type Config struct {
 	IconMode string `json:"icon_mode"`
 	// RefreshSeconds je perióda merania v sekundách.
 	RefreshSeconds int `json:"refresh_seconds"`
+	// DrainPerHour je zapamätaná rýchlosť vybíjania z posledného behu na
+	// batérii. Vďaka nej vie aplikácia hneď po štarte povedať, ako dlho by
+	// počítač vydržal po odpojení – inak by sa to učila odznova.
+	DrainPerHour      float64 `json:"drain_per_hour"`
+	DrainUsesCapacity bool    `json:"drain_uses_capacity"`
 	// TrayPromoted si pamätá, že sme ikonu už raz vytiahli z prepadovej
 	// ponuky do panela úloh. Druhý raz to aplikácia nerobí – keby si ju
 	// používateľ medzitým schoval, nemá mu to prepisovať späť.
@@ -65,6 +70,10 @@ func Load(path string) Config {
 		c.RefreshSeconds = loaded.RefreshSeconds
 	}
 	c.TrayPromoted = loaded.TrayPromoted
+	if loaded.DrainPerHour > 0 {
+		c.DrainPerHour = loaded.DrainPerHour
+		c.DrainUsesCapacity = loaded.DrainUsesCapacity
+	}
 	return c
 }
 

@@ -275,3 +275,51 @@ func TestRuntimeOnBatteryHiddenWhileDischarging(t *testing.T) {
 		}
 	}
 }
+
+// Pri plnej batérii v sieti neexistuje ani čas do nabitia, ani do vybitia.
+// Vtedy má cenu ukázať, ako dlho by počítač vydržal po odpojení.
+func TestTooltipShowsRuntimeWhenFull(t *testing.T) {
+	s := Status{
+		Present: true, OnAC: true, State: StateFull, Percent: 100,
+		RuntimeOnBattery: 5*time.Hour + 20*time.Minute,
+	}
+	want := "100 % – v sieti, plná\nVýdrž po odpojení: ~ 5 h 20 min"
+	if got := s.Tooltip(); got != want {
+		t.Errorf("Tooltip() =\n%q\nchcem\n%q", got, want)
+	}
+}
+
+func TestTooltipFullWithoutHistory(t *testing.T) {
+	s := Status{Present: true, OnAC: true, State: StateFull, Percent: 100}
+	want := "100 % – v sieti, plná\nBatéria je nabitá"
+	if got := s.Tooltip(); got != want {
+		t.Errorf("Tooltip() = %q, chcem %q", got, want)
+	}
+}
+
+// Zapamätaná rýchlosť vybíjania musí prežiť reštart aplikácie.
+func TestDrainSurvivesRestore(t *testing.T) {
+	e := NewEstimator()
+	e.Update(&Status{
+		Present: true, State: StateDischarging,
+		Capacity: 25000, FullCapacity: 50000, Percent: 50,
+		Rate: -10000, RateKnown: true, SampledAt: time.Now(),
+	})
+	perHour, usesCap, ok := e.Drain()
+	if !ok || perHour <= 0 {
+		t.Fatalf("Drain() = %.0f, %v, %v", perHour, usesCap, ok)
+	}
+
+	fresh := NewEstimator()
+	if _, _, ok := fresh.Drain(); ok {
+		t.Error("nový odhadovač nemá čo pamätať")
+	}
+	fresh.RestoreDrain(perHour, usesCap)
+	s := Status{Present: true, OnAC: true, State: StateFull,
+		Capacity: 50000, FullCapacity: 50000, Percent: 100}
+	d, ok := fresh.RuntimeOnBattery(s)
+	if !ok {
+		t.Fatal("po obnovení sa výdrž mala dať spočítať")
+	}
+	approxHours(t, d, 5, 0.05)
+}

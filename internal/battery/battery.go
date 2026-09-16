@@ -187,8 +187,10 @@ func (s Status) Tooltip() string {
 	out := fmt.Sprintf("%.0f %% – %s", s.Percent, s.State)
 	if label, d, ok := s.Remaining(); ok {
 		out += "\n" + label + ": " + FormatDuration(d)
-	} else if s.State == StateFull {
+	} else if s.State == StateFull && s.RuntimeOnBattery <= 0 {
 		out += "\nBatéria je nabitá"
+	} else if s.RuntimeOnBattery > 0 {
+		out += "\nVýdrž po odpojení: ~ " + FormatDuration(s.RuntimeOnBattery)
 	} else if s.State == StateIdleOnAC {
 		out += "\nNenabíja sa (limit nabíjania)"
 	} else {

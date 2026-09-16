@@ -79,6 +79,23 @@ func (e *Estimator) RuntimeOnBattery(s Status) (time.Duration, bool) {
 	return d, true
 }
 
+// Drain vráti zapamätanú rýchlosť vybíjania (jednotiek za hodinu) a to, či
+// ide o jednotky kapacity alebo percentá. Slúži na uloženie medzi behmi:
+// bez nej by aplikácia po každom reštarte čakala, kým sa to znova naučí.
+func (e *Estimator) Drain() (float64, bool, bool) {
+	if e.lastDrain <= 0 {
+		return 0, false, false
+	}
+	return e.lastDrain, e.drainUsesCap, true
+}
+
+// RestoreDrain vráti do odhadovača skôr zapamätanú rýchlosť vybíjania.
+func (e *Estimator) RestoreDrain(perHour float64, usesCapacity bool) {
+	if perHour > 0 {
+		e.lastDrain, e.drainUsesCap = perHour, usesCapacity
+	}
+}
+
 // rememberDrain si uloží, ako rýchlo batéria ubúdala, aby sa dal odhad
 // výdrže ukázať aj počas nabíjania.
 func (e *Estimator) rememberDrain(s *Status) {
