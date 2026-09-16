@@ -156,7 +156,14 @@ pomôže odhlásenie a prihlásenie do Windowsu.
 Vo Windowse 10 sa ikony ovládajú inde – *Nastavenia → Prispôsobenie → Panel
 úloh → Vybrať ikony zobrazené na paneli úloh*.
 
-Ak sa nestane vôbec nič:
+Keď aplikácia beží a program sa spustí znova, opýta sa, či má bežiacu
+verziu ukončiť a nahradiť novou. Ukončiť sa dá aj priamo:
+
+```powershell
+.\bateria.exe -quit
+```
+
+A keď sa nestane vôbec nič:
 
 ```powershell
 .\bateria.exe -diag

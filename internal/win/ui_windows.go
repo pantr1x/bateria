@@ -29,6 +29,16 @@ const (
 	WAInactive = 0
 )
 
+// Správy, ktorými ikona v oznamovacej oblasti hlási kliknutie, keď je
+// zaregistrovaná ako verzia 4. Ľavé kliknutie vtedy NEPRÍDE ako
+// WM_LBUTTONUP, ale ako NIN_SELECT – bez toho by ikona na kliknutie
+// nereagovala.
+const (
+	NINSelect           = 0x0400 // WM_USER + 0
+	NINKeySelect        = 0x0401
+	NINBalloonUserClick = 0x0405
+)
+
 // Štýly okna.
 const (
 	WSPopup        = 0x80000000
@@ -175,6 +185,21 @@ const (
 func MessageBox(title, text string, flags uint32) {
 	procMessageBox.Call(0, uintptr(unsafe.Pointer(Str(text))),
 		uintptr(unsafe.Pointer(Str(title))), uintptr(flags|MBSetForeground))
+}
+
+// AskYesNo položí otázku s tlačidlami Áno a Nie. Predvolené je Nie, nech
+// potvrdenie Enterom nikdy nič nezruší.
+func AskYesNo(title, text string) bool {
+	const (
+		mbYesNo        = 0x0004
+		mbIconQuestion = 0x0020
+		mbDefButton2   = 0x0100
+		idYes          = 6
+	)
+	r, _ := procMessageBox.Call(0, uintptr(unsafe.Pointer(Str(text))),
+		uintptr(unsafe.Pointer(Str(title))),
+		mbYesNo|mbIconQuestion|mbDefButton2|MBSetForeground)
+	return r == idYes
 }
 
 // RegisterClass zaregistruje triedu okna a vráti jej atóm.

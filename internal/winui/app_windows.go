@@ -7,7 +7,10 @@ import (
 	"image"
 	"math"
 	"os"
+	"runtime/debug"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/pantr1x/bateria/internal/battery"
 	"github.com/pantr1x/bateria/internal/config"
@@ -20,6 +23,7 @@ const (
 
 	trayIconID      = 1
 	msgTrayCallback = win.WMApp + 1
+	msgReadingDone  = win.WMApp + 2
 	timerRefresh    = 1
 	timerPromote    = 2
 )
@@ -51,6 +55,15 @@ type App struct {
 	iconKey        string
 	menuOpen       bool
 	promoteTries   int
+
+	// Stav batérie sa číta v samostatnej úlohe: volania ovládača idú cez
+	// systém a pri chybnom ovládači vedia trvať. Keby bežali vo vlákne
+	// okna, aplikácia by na ten čas prestala reagovať na kliknutia –
+	// vrátane príkazu Ukončiť.
+	mu      sync.Mutex
+	pending battery.Status
+	hasNew  bool
+	reading bool
 }
 
 var (
@@ -69,8 +82,16 @@ func Run() error {
 	// Jedna inštancia stačí. Poznáme ju podľa okna s našou triedou – je to
 	// spoľahlivejšie než zámok, ktorý by pri omyle aplikáciu ticho ukončil.
 	if other := win.FindWindow(trayClassName); other != 0 {
-		win.PostMessage(other, msgShowWindow, 0, 0)
-		return nil
+		if !win.AskYesNo("Batéria",
+			"Batéria už beží.\n\nChceš bežiacu verziu ukončiť a spustiť túto?\n\n"+
+				"Nie = nechať bežať a len otvoriť okno s podrobnosťami.") {
+			win.PostMessage(other, msgShowWindow, 0, 0)
+			return nil
+		}
+		if !stopInstance(other) {
+			return fmt.Errorf("bežiacu verziu sa nepodarilo ukončiť; " +
+				"skús ju zavrieť v Správcovi úloh (položka bateria)")
+		}
 	}
 
 	a := &App{est: battery.NewEstimator(), cfg: config.Default()}
@@ -105,6 +126,9 @@ func Run() error {
 	a.taskbarCreated = win.RegisterWindowMessage("TaskbarCreated")
 
 	a.tray = win.NewTrayIcon(a.hwnd, trayIconID, msgTrayCallback)
+	// Prvá ikona sa nakreslí hneď, nech v paneli nie je prázdne miesto,
+	// kým dobehne prvé meranie.
+	a.updateIcon()
 	a.refresh()
 	if !a.tray.OK() {
 		return fmt.Errorf("ikonu sa nepodarilo pridať do oznamovacej oblasti")
@@ -128,6 +152,30 @@ func Run() error {
 	return nil
 }
 
+// Quit ukončí bežiacu inštanciu aplikácie. Vráti false, keď žiadna nebeží
+// alebo sa ju nepodarilo zavrieť.
+func Quit() bool {
+	other := win.FindWindow(trayClassName)
+	if other == 0 {
+		return false
+	}
+	return stopInstance(other)
+}
+
+// stopInstance požiada okno o zavretie a počká, kým naozaj zmizne. Funguje
+// aj na staršie verzie aplikácie – WM_CLOSE spracúva predvolená obsluha
+// okna, ktorá okno zruší a tým ikonu z panela odstráni.
+func stopInstance(hwnd win.HWND) bool {
+	win.PostMessage(hwnd, win.WMClose, 0, 0)
+	for i := 0; i < 60; i++ {
+		if win.FindWindow(trayClassName) == 0 {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return false
+}
+
 func trayWndProc(hwnd win.HWND, msg uint32, wparam, lparam uintptr) uintptr {
 	defer guard("obsluha správ okna")
 	a := app
@@ -137,12 +185,18 @@ func trayWndProc(hwnd win.HWND, msg uint32, wparam, lparam uintptr) uintptr {
 	switch msg {
 	case msgTrayCallback:
 		// Pri verzii ikony 4 je v dolnej polovici lParam správa myši.
+		// Ľavé kliknutie príde ako NIN_SELECT, nie ako WM_LBUTTONUP;
+		// staršia verzia posiela WM_LBUTTONUP, preto sú tu obe.
 		switch uint32(win.LoWord(lparam)) {
-		case win.WMLButtonUp:
+		case win.NINSelect, win.NINKeySelect, win.WMLButtonUp, win.NINBalloonUserClick:
 			a.togglePopup()
 		case win.WMContextMenu, win.WMRButtonUp:
 			a.showMenu()
 		}
+		return 0
+
+	case msgReadingDone:
+		a.applyReading()
 		return 0
 
 	case win.WMTimer:
@@ -192,12 +246,49 @@ func trayWndProc(hwnd win.HWND, msg uint32, wparam, lparam uintptr) uintptr {
 	return win.DefWindowProc(hwnd, msg, wparam, lparam)
 }
 
-// refresh odmeria stav batérie a premietne ho do ikony aj do okna.
+// refresh spustí meranie. Výsledok si vyzdvihne obsluha okna, keď meranie
+// dobehne – vlákno okna sa tak nikdy nečaká na ovládač.
 func (a *App) refresh() {
-	st, err := battery.Read()
-	if err != nil {
-		// Bez údajov ukážeme ikonu „bez batérie“, aplikácia beží ďalej.
-		st = battery.Status{SampledAt: st.SampledAt}
+	a.mu.Lock()
+	if a.reading {
+		a.mu.Unlock()
+		return // predchádzajúce meranie ešte beží
+	}
+	a.reading = true
+	a.mu.Unlock()
+
+	hwnd := a.hwnd
+	go func() {
+		// Pád v tejto úlohe by inak zhodil celý program bez slova.
+		defer func() {
+			if r := recover(); r != nil {
+				a.mu.Lock()
+				a.reading = false
+				a.mu.Unlock()
+				Report(fmt.Errorf("meranie batérie: %v", r), debug.Stack())
+			}
+		}()
+		st, err := battery.Read()
+		if err != nil {
+			// Bez údajov ukážeme ikonu „bez batérie“, aplikácia beží ďalej.
+			st = battery.Status{}
+		}
+		a.mu.Lock()
+		a.pending, a.hasNew, a.reading = st, true, false
+		a.mu.Unlock()
+		win.PostMessage(hwnd, msgReadingDone, 0, 0)
+	}()
+}
+
+// applyReading premietne nameraný stav do ikony aj do okna. Beží vo vlákne
+// okna, takže odhadovač aj ikona zostávajú v jedných rukách.
+func (a *App) applyReading() {
+	a.mu.Lock()
+	st, ok := a.pending, a.hasNew
+	a.hasNew = false
+	a.mu.Unlock()
+	if !ok {
+		return
 	}
 	a.est.Update(&st)
 	a.status = st

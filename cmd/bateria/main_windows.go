@@ -3,8 +3,10 @@
 // Command bateria zobrazuje v oznamovacej oblasti Windowsu ikonu batérie
 // s časom do plného nabitia a do vybitia.
 //
-// Prepínač -diag vypíše, čo aplikácia v systéme vidí; hodí sa, keď sa ikona
-// v paneli neobjaví.
+// Prepínače:
+//
+//	-diag   vypíše, čo aplikácia v systéme vidí (keď sa ikona neobjaví)
+//	-quit   ukončí bežiacu inštanciu
 package main
 
 import (
@@ -26,22 +28,34 @@ func main() {
 		}
 	}()
 
-	if diagRequested() {
+	switch {
+	case hasFlag("diag"):
 		win.MessageBox("Batéria – diagnostika", winui.Diagnose(), win.MBIconInfo)
 		return
+	case hasFlag("quit", "stop", "ukonci"):
+		if winui.Quit() {
+			win.MessageBox("Batéria", "Bežiaca aplikácia bola ukončená.", win.MBIconInfo)
+		} else {
+			win.MessageBox("Batéria", "Žiadna bežiaca aplikácia sa nenašla.", win.MBIconInfo)
+		}
+		return
 	}
+
 	if err := winui.Run(); err != nil {
 		winui.Report(fmt.Errorf("aplikáciu sa nepodarilo spustiť: %w", err), nil)
 		os.Exit(1)
 	}
 }
 
-// diagRequested prijíma -diag, --diag aj /diag – podľa toho, ako je kto
-// zvyknutý písať prepínače vo Windowse.
-func diagRequested() bool {
+// hasFlag prijíma prepínače písané ako -x, --x aj /x – podľa toho, ako je
+// kto zvyknutý.
+func hasFlag(names ...string) bool {
 	for _, a := range os.Args[1:] {
-		if strings.EqualFold(strings.TrimLeft(a, "-/"), "diag") {
-			return true
+		got := strings.TrimLeft(a, "-/")
+		for _, n := range names {
+			if strings.EqualFold(got, n) {
+				return true
+			}
 		}
 	}
 	return false
