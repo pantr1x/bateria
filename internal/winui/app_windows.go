@@ -56,6 +56,11 @@ type App struct {
 var (
 	app      *App
 	trayProc = syscall.NewCallback(trayWndProc)
+
+	// msgShowWindow si posielajú inštancie aplikácie medzi sebou. Keď
+	// používateľ spustí program znova, bežiaca inštancia otvorí okno
+	// s podrobnosťami – inak by sa zdalo, že kliknutie nič neurobilo.
+	msgShowWindow = win.RegisterWindowMessage("BateriaShowWindow")
 )
 
 // Run spustí aplikáciu a vráti sa, až keď sa ukončí.
@@ -63,7 +68,8 @@ func Run() error {
 	win.EnableDPIAwareness()
 	// Jedna inštancia stačí. Poznáme ju podľa okna s našou triedou – je to
 	// spoľahlivejšie než zámok, ktorý by pri omyle aplikáciu ticho ukončil.
-	if win.FindWindow(trayClassName) != 0 {
+	if other := win.FindWindow(trayClassName); other != 0 {
+		win.PostMessage(other, msgShowWindow, 0, 0)
 		return nil
 	}
 
@@ -163,6 +169,18 @@ func trayWndProc(hwnd win.HWND, msg uint32, wparam, lparam uintptr) uintptr {
 	case win.WMDestroy:
 		a.tray.Remove()
 		win.PostQuit(0)
+		return 0
+	}
+	// Druhé spustenie programu: ukážeme, že aplikácia beží.
+	// Porovnanie musí byť mimo switchu a s kontrolou na nulu – keby sa
+	// správa nezaregistrovala, splynula by s prázdnou správou WM_NULL.
+	if msgShowWindow != 0 && msg == msgShowWindow {
+		if !a.cfg.TrayPromoted {
+			a.promoteIcon(false)
+		}
+		if a.popup == nil || !a.popup.visible {
+			a.togglePopup()
+		}
 		return 0
 	}
 	if a.taskbarCreated != 0 && msg == a.taskbarCreated {
