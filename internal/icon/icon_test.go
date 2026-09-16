@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"image"
+	"image/color"
 	"testing"
 )
 
@@ -155,6 +156,34 @@ func TestEncodeICOStructure(t *testing.T) {
 		}
 		if got := le.Uint32(data[off:]); got != 40 {
 			t.Errorf("obrázok %d nezačína hlavičkou DIB", i)
+		}
+	}
+}
+
+func TestMaskImageColorsAndAlpha(t *testing.T) {
+	mask := []byte{0, 128, 255, 64}
+	img := MaskImage(mask, 2, color.NRGBA{10, 20, 30, 255})
+	if got := img.NRGBAAt(0, 0); got.A != 0 {
+		t.Errorf("nulová maska má byť priehľadná, je %v", got)
+	}
+	got := img.NRGBAAt(1, 0)
+	if got.R != 10 || got.G != 20 || got.B != 30 || got.A != 128 {
+		t.Errorf("pixel = %v, chcem farbu {10 20 30} s alfou 128", got)
+	}
+	if a := img.NRGBAAt(0, 1).A; a != 255 {
+		t.Errorf("plná maska má mať alfu 255, má %d", a)
+	}
+}
+
+func TestMaskImageTooShortIsSafe(t *testing.T) {
+	img := MaskImage([]byte{1, 2}, 4, color.NRGBA{255, 255, 255, 255})
+	if img.Bounds().Dx() != 4 {
+		t.Errorf("aj pri krátkej maske má vzniknúť obrázok 4×4")
+	}
+	for i := 3; i < len(img.Pix); i += 4 {
+		if img.Pix[i] != 0 {
+			t.Error("krátka maska sa nesmie čítať mimo rozsahu")
+			break
 		}
 	}
 }

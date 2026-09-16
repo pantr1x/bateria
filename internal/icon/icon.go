@@ -144,10 +144,10 @@ func drawBattery(c *canvas, s Spec, k float64) {
 	}
 
 	if s.Charging {
-		// Blesk s priehľadným lemom, aby bol čitateľný aj cez výplň.
-		// Pri 16 px je blesk vpísaný do obrysu už len škvrna, preto cez
-		// obrys zámerne prečnieva – rovnako ako ikona nabíjania vo Windowse.
-		// Priehľadný lem ho oddelí od výplne, inak by s ňou splynul.
+		// Pri 16 px je blesk vpísaný do obrysu už len škvrna, preto cez obrys
+		// zámerne prečnieva. Priehľadný lem ho oddelí od výplne – bez neho
+		// by zelený blesk na zelenej výplni splynul do škvrny, preto je aj
+		// výplň pri nabíjaní biela a zelený je len samotný blesk.
 		b := boltPath(7.0*k, 3.2*k, 6.0*k, 9.6*k)
 		c.erasePoly(b, 0.55*k)
 		c.fillPoly(b, s.Theme.Accent)
@@ -340,4 +340,36 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b)
+}
+
+// MaskImage zafarbí alfa masku (napr. znak zo systémového písma) danou
+// farbou. Maska je jeden bajt na pixel, riadky idú zhora nadol.
+func MaskImage(mask []byte, size int, col color.NRGBA) *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
+	if len(mask) < size*size {
+		return img
+	}
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			a := mask[y*size+x]
+			if a == 0 {
+				continue
+			}
+			i := img.PixOffset(x, y)
+			img.Pix[i] = col.R
+			img.Pix[i+1] = col.G
+			img.Pix[i+2] = col.B
+			img.Pix[i+3] = uint8(uint32(a) * uint32(col.A) / 255)
+		}
+	}
+	return img
+}
+
+// LevelColor je farba, ktorou sa kreslí ikona pri danom stave: zelená pri
+// nabíjaní, žltá pri nízkom a červená pri kritickom nabití.
+func (s Spec) LevelColor() color.NRGBA {
+	if s.Charging {
+		return s.Theme.Accent
+	}
+	return s.levelColor()
 }

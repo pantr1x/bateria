@@ -9,7 +9,11 @@ import (
 
 // Režimy zobrazenia ikony.
 const (
+	// IconSystem je ikona, akú kreslí sám Windows (znak zo systémového písma).
+	IconSystem = "system"
+	// IconBattery je vlastná kreslená ikona batérie.
 	IconBattery = "battery"
+	// IconPercent je číslo v percentách.
 	IconPercent = "percent"
 )
 
@@ -23,7 +27,7 @@ type Config struct {
 
 // Default vráti predvolené nastavenia.
 func Default() Config {
-	return Config{IconMode: IconBattery, RefreshSeconds: 2}
+	return Config{IconMode: IconSystem, RefreshSeconds: 2}
 }
 
 // Path vráti cestu k súboru s nastaveniami (%APPDATA%\Bateria\config.json).
@@ -47,7 +51,8 @@ func Load(path string) Config {
 	if err := json.Unmarshal(data, &loaded); err != nil {
 		return c
 	}
-	if loaded.IconMode == IconBattery || loaded.IconMode == IconPercent {
+	switch loaded.IconMode {
+	case IconSystem, IconBattery, IconPercent:
 		c.IconMode = loaded.IconMode
 	}
 	if loaded.RefreshSeconds >= 1 && loaded.RefreshSeconds <= 60 {

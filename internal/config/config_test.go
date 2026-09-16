@@ -41,7 +41,7 @@ func TestLoadRejectsOutOfRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := Load(p)
-	if got.IconMode != IconBattery {
+	if got.IconMode != Default().IconMode {
 		t.Errorf("neznámy režim ikony sa mal zahodiť, je %q", got.IconMode)
 	}
 	if got.RefreshSeconds != Default().RefreshSeconds {

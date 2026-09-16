@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/pantr1x/bateria/internal/battery"
+	"github.com/pantr1x/bateria/internal/config"
 	"github.com/pantr1x/bateria/internal/icon"
 	"github.com/pantr1x/bateria/internal/win"
 )
@@ -59,6 +60,7 @@ func newPopup(a *App) *popup {
 }
 
 func popupWndProc(hwnd win.HWND, msg uint32, wparam, lparam uintptr) uintptr {
+	defer guard("obsluha správ okna s podrobnosťami")
 	p := activePopup
 	if p == nil {
 		return win.DefWindowProc(hwnd, msg, wparam, lparam)
@@ -271,18 +273,18 @@ func (p *popup) paint() {
 func (p *popup) bigIcon() uintptr {
 	st := p.a.status
 	size := p.scale(40)
-	theme := icon.DarkTaskbar()
-	if win.AppsUseLightTheme() {
-		theme = icon.LightTaskbar()
+	light := win.AppsUseLightTheme()
+	// V okne dáva zmysel obrys batérie aj vtedy, keď je v paneli číslo.
+	mode := p.a.cfg.IconMode
+	if mode == config.IconPercent {
+		mode = config.IconSystem
 	}
-	charging := st.State == battery.StateCharging
-	key := fmt.Sprintf("%d|%d|%v|%v|%v", size, int(math.Round(st.Percent)),
-		charging, st.Present, win.AppsUseLightTheme())
+	key := fmt.Sprintf("%d|%d|%v|%v|%v|%s", size, int(math.Round(st.Percent)),
+		st.State == battery.StateCharging, st.Present, light, mode)
 	if key == p.iconKey && p.iconHandle != 0 {
 		return p.iconHandle
 	}
-	img := icon.Render(icon.Spec{Size: int(size), Theme: theme,
-		Percent: st.Percent, Charging: charging, Present: st.Present})
+	img := iconImage(st, size, mode, light)
 	h := win.CreateIconFromResource(icon.EncodeResource(img), size, size)
 	if h == 0 {
 		return p.iconHandle

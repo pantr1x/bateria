@@ -4,6 +4,7 @@ package winui
 
 import (
 	"fmt"
+	"image"
 	"math"
 	"os"
 	"syscall"
@@ -16,7 +17,6 @@ import (
 
 const (
 	trayClassName = "BateriaTrayWindow"
-	mutexName     = `Local\BateriaTrayApp`
 
 	trayIconID      = 1
 	msgTrayCallback = win.WMApp + 1
@@ -26,6 +26,7 @@ const (
 // Položky kontextovej ponuky.
 const (
 	cmdDetails = iota + 100
+	cmdModeSystem
 	cmdModeBattery
 	cmdModePercent
 	cmdAutostart
@@ -57,16 +58,20 @@ var (
 // Run spustí aplikáciu a vráti sa, až keď sa ukončí.
 func Run() error {
 	win.EnableDPIAwareness()
-	if !win.SingleInstance(mutexName) {
-		return nil // aplikácia už beží, druhá ikona v paneli netreba
+	// Jedna inštancia stačí. Poznáme ju podľa okna s našou triedou – je to
+	// spoľahlivejšie než zámok, ktorý by pri omyle aplikáciu ticho ukončil.
+	if win.FindWindow(trayClassName) != 0 {
+		return nil
 	}
 
-	a := &App{est: battery.NewEstimator()}
+	a := &App{est: battery.NewEstimator(), cfg: config.Default()}
+	firstRun := false
 	if p, err := config.Path(); err == nil {
 		a.cfgPath = p
+		if _, err := os.Stat(p); err != nil {
+			firstRun = true
+		}
 		a.cfg = config.Load(p)
-	} else {
-		a.cfg = config.Default()
 	}
 	app = a
 
@@ -92,6 +97,19 @@ func Run() error {
 
 	a.tray = win.NewTrayIcon(a.hwnd, trayIconID, msgTrayCallback)
 	a.refresh()
+	if !a.tray.OK() {
+		return fmt.Errorf("ikonu sa nepodarilo pridať do oznamovacej oblasti")
+	}
+	if firstRun {
+		// Windows 11 nové ikony schováva pod šípku – nech používateľ vie,
+		// že aplikácia beží a kde ju má hľadať.
+		a.tray.Balloon("Batéria beží",
+			"Ikona je pri hodinách. Ak ju nevidíš, je skrytá pod šípkou ^ – "+
+				"stačí ju odtiaľ potiahnuť myšou na panel úloh.")
+		if a.cfgPath != "" {
+			_ = config.Save(a.cfgPath, a.cfg)
+		}
+	}
 	win.SetTimer(a.hwnd, timerRefresh, uint32(a.cfg.RefreshSeconds)*1000)
 
 	win.RunMessageLoop()
@@ -99,6 +117,7 @@ func Run() error {
 }
 
 func trayWndProc(hwnd win.HWND, msg uint32, wparam, lparam uintptr) uintptr {
+	defer guard("obsluha správ okna")
 	a := app
 	if a == nil {
 		return win.DefWindowProc(hwnd, msg, wparam, lparam)
@@ -165,29 +184,88 @@ func (a *App) refresh() {
 func (a *App) updateIcon() {
 	size := trayIconSize()
 	light := win.TaskbarUsesLightTheme()
-	theme := icon.DarkTaskbar()
-	if light {
-		theme = icon.LightTaskbar()
-	}
-	mode := icon.ModeBattery
-	if a.cfg.IconMode == config.IconPercent {
-		mode = icon.ModePercent
-	}
-	charging := a.status.State == battery.StateCharging
-	key := fmt.Sprintf("%d|%v|%d|%d|%v|%v", size, light, mode,
-		int(math.Round(a.status.Percent)), charging, a.status.Present)
+	key := fmt.Sprintf("%d|%v|%s|%d|%v|%v", size, light, a.cfg.IconMode,
+		int(math.Round(a.status.Percent)), a.status.State == battery.StateCharging,
+		a.status.Present)
 
 	if key != a.iconKey || a.iconHandle == 0 {
-		img := icon.Render(icon.Spec{
-			Size: int(size), Mode: mode, Theme: theme,
-			Percent: a.status.Percent, Charging: charging, Present: a.status.Present,
-		})
+		img := iconImage(a.status, size, a.cfg.IconMode, light)
 		if h := win.CreateIconFromResource(icon.EncodeResource(img), size, size); h != 0 {
 			a.iconHandle = h
 			a.iconKey = key
 		}
 	}
 	a.tray.Update(a.iconHandle, a.status.Tooltip())
+}
+
+// iconImage pripraví obrázok ikony pre daný stav, veľkosť a režim.
+func iconImage(st battery.Status, size int32, mode string, light bool) *image.NRGBA {
+	theme := icon.DarkTaskbar()
+	if light {
+		theme = icon.LightTaskbar()
+	}
+	spec := icon.Spec{
+		Size: int(size), Theme: theme, Percent: st.Percent,
+		Charging: st.State == battery.StateCharging, Present: st.Present,
+	}
+	switch mode {
+	case config.IconPercent:
+		spec.Mode = icon.ModePercent
+	case config.IconSystem:
+		if img, ok := systemIcon(spec); ok {
+			return img
+		}
+		// Písmo symbolov v systéme nie je (staršie Windows) – nakreslíme vlastnú.
+	}
+	return icon.Render(spec)
+}
+
+// systemIcon vykreslí ten istý znak, akým kreslí ikonu batérie samotný
+// panel úloh Windowsu. Keď písmo alebo znak chýba, vráti false.
+func systemIcon(s icon.Spec) (*image.NRGBA, bool) {
+	primary, fallback := icon.SystemGlyph(s.Percent, s.Charging, s.Present)
+	col := s.LevelColor()
+	for _, face := range []string{icon.FontFluent, icon.FontMDL2} {
+		for _, r := range []rune{primary, fallback} {
+			if r == 0 {
+				continue
+			}
+			if mask, ok := glyphMask(face, r, int32(s.Size)); ok {
+				return icon.MaskImage(mask, s.Size, col), true
+			}
+		}
+	}
+	return nil, false
+}
+
+// glyphMask vykreslí znak a umiestni ho do stredu ikony. Keď je znak väčší
+// než ikona (pri niektorých veľkostiach písma sa to stáva), prekreslí ho
+// menším písmom, aby sa zmestil celý.
+func glyphMask(face string, r rune, size int32) ([]byte, bool) {
+	em := size
+	for attempt := 0; attempt < 3; attempt++ {
+		raw, ok := win.GlyphAlpha(face, r, em, size*3)
+		if !ok {
+			return nil, false
+		}
+		mask, inkW, inkH, ok := icon.FitMask(raw, int(size*3), int(size))
+		if !ok {
+			return nil, false
+		}
+		larger := inkW
+		if inkH > larger {
+			larger = inkH
+		}
+		if larger <= int(size) {
+			return mask, true
+		}
+		next := int32(int(em) * int(size) / larger)
+		if next < 6 || next >= em {
+			return mask, true // menšie už nemá zmysel, radšej mierny orez
+		}
+		em = next
+	}
+	return nil, false
 }
 
 // trayIconSize vráti veľkosť malej ikony pri aktuálnom rozlíšení.
@@ -221,7 +299,8 @@ func (a *App) showMenu() {
 	m.Separator()
 	m.Item(cmdDetails, "Podrobnosti…", false, false)
 	m.Separator()
-	m.Item(cmdModeBattery, "Ikona: batéria", a.cfg.IconMode == config.IconBattery, false)
+	m.Item(cmdModeSystem, "Ikona: ako vo Windowse", a.cfg.IconMode == config.IconSystem, false)
+	m.Item(cmdModeBattery, "Ikona: vlastná", a.cfg.IconMode == config.IconBattery, false)
 	m.Item(cmdModePercent, "Ikona: percentá", a.cfg.IconMode == config.IconPercent, false)
 	m.Separator()
 	m.Item(cmdAutostart, "Spúšťať s Windowsom", win.AutostartEnabled(), false)
@@ -237,6 +316,8 @@ func (a *App) command(id uint32) {
 	switch id {
 	case cmdDetails:
 		a.togglePopup()
+	case cmdModeSystem:
+		a.setIconMode(config.IconSystem)
 	case cmdModeBattery:
 		a.setIconMode(config.IconBattery)
 	case cmdModePercent:

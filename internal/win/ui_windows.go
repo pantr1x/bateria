@@ -2,10 +2,7 @@
 
 package win
 
-import (
-	"syscall"
-	"unsafe"
-)
+import "unsafe"
 
 // Správy okna, ktoré aplikácia spracúva.
 const (
@@ -128,9 +125,10 @@ var (
 	procSetProcessDPIAware = user32.proc("SetProcessDPIAware")
 	procPostMessage        = user32.proc("PostMessageW")
 	procGetSysColorBrush   = user32.proc("GetSysColorBrush")
+	procMessageBox         = user32.proc("MessageBoxW")
+	procFindWindow         = user32.proc("FindWindowW")
 
 	procGetModuleHandle = kernel32dll.proc("GetModuleHandleW")
-	procCreateMutex     = kernel32dll.proc("CreateMutexW")
 
 	procShellNotifyIcon = shell32.proc("Shell_NotifyIconW")
 	procShellNotifyRect = shell32.proc("Shell_NotifyIconGetRect")
@@ -158,14 +156,25 @@ func ModuleHandle() uintptr {
 	return h
 }
 
-// SingleInstance vytvorí pomenovaný zámok. Vráti false, ak už aplikácia beží.
-func SingleInstance(name string) bool {
-	h, errno := procCreateMutex.Call(0, 1, uintptr(unsafe.Pointer(Str(name))))
-	if h == 0 {
-		return true // zámok sa nepodaril, radšej pustíme aplikáciu ďalej
-	}
-	const errAlreadyExists = 183
-	return errno != syscall.Errno(errAlreadyExists)
+// FindWindow nájde okno podľa triedy. Vráti 0, ak také okno neexistuje.
+func FindWindow(class string) HWND {
+	h, _ := procFindWindow.Call(uintptr(unsafe.Pointer(Str(class))), 0)
+	return h
+}
+
+// Typy okna so správou.
+const (
+	MBOK            = 0x0000
+	MBIconError     = 0x0010
+	MBIconInfo      = 0x0040
+	MBSetForeground = 0x00010000
+)
+
+// MessageBox zobrazí okno so správou. Bez neho by sa chyba pri štarte
+// stratila – aplikácia beží bez konzoly, takže výpis nemá kam ísť.
+func MessageBox(title, text string, flags uint32) {
+	procMessageBox.Call(0, uintptr(unsafe.Pointer(Str(text))),
+		uintptr(unsafe.Pointer(Str(title))), uintptr(flags|MBSetForeground))
 }
 
 // RegisterClass zaregistruje triedu okna a vráti jej atóm.
@@ -271,7 +280,10 @@ const (
 	nifMessage = 0x01
 	nifIcon    = 0x02
 	nifTip     = 0x04
+	nifInfo    = 0x10
 	nifShowTip = 0x80
+
+	niifInfo = 0x01
 
 	notifyIconVersion4 = 4
 )
@@ -304,11 +316,15 @@ type notifyIconIdentifier struct {
 
 // TrayIcon je ikona v oznamovacej oblasti panela úloh.
 type TrayIcon struct {
-	hwnd HWND
-	id   uint32
-	msg  uint32
-	icon uintptr
+	hwnd  HWND
+	id    uint32
+	msg   uint32
+	icon  uintptr
+	added bool
 }
+
+// OK hovorí, či sa ikonu podarilo do panela pridať.
+func (t *TrayIcon) OK() bool { return t.added }
 
 // NewTrayIcon pridá ikonu do panela. CallbackMessage je správa, ktorou
 // bude panel hlásiť kliknutia.
@@ -336,6 +352,7 @@ func (t *TrayIcon) Add() bool {
 	if r == 0 {
 		return false
 	}
+	t.added = true
 	// Verzia 4 dáva presnejšie hlásenia o kliknutí vrátane polohy kurzora.
 	v := t.data(0)
 	v.VersionTimeout = notifyIconVersion4
@@ -358,6 +375,17 @@ func (t *TrayIcon) Update(icon uintptr, tip string) {
 	if old != 0 && old != icon {
 		procDestroyIcon.Call(old)
 	}
+}
+
+// Balloon zobrazí bublinové upozornenie pri ikone. Používa sa pri prvom
+// spustení: Windows 11 nové ikony schováva pod šípku a bez upozornenia by
+// používateľ nevedel, že aplikácia beží.
+func (t *TrayIcon) Balloon(title, text string) {
+	d := t.data(nifInfo)
+	CopyStr(d.InfoTitle[:], title)
+	CopyStr(d.Info[:], text)
+	d.InfoFlags = niifInfo
+	procShellNotifyIcon.Call(nimModify, uintptr(unsafe.Pointer(d)))
 }
 
 // Remove odstráni ikonu z panela.

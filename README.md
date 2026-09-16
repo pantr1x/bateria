@@ -28,12 +28,26 @@ návrhovej), počet nabíjacích cyklov, napätie a zdroj odhadu. Keď je počí
 v sieti, pribudne riadok **Výdrž po odpojení** – odhad podľa toho, ako rýchlo
 sa batéria vybíjala naposledy.
 
-**Kliknutie pravým tlačidlom** otvorí ponuku: prepnutie vzhľadu ikony
-(obrys batérie / percentá), spúšťanie s Windowsom a ukončenie.
+**Kliknutie pravým tlačidlom** otvorí ponuku: prepnutie vzhľadu ikony,
+spúšťanie s Windowsom a ukončenie.
+
+### Vzhľad ikony
+
+Na výber sú tri režimy (ponuka pravého tlačidla):
+
+* **ako vo Windowse** (predvolené) – použije sa ten istý znak, akým kreslí
+  ikonu batérie samotný panel úloh: `Segoe Fluent Icons` vo Windowse 11,
+  `Segoe MDL2 Assets` vo Windowse 10. Znak sa vykreslí cez GDI, alfa sa
+  odvodí z jasu a výsledok sa podľa skutočného obrysu umiestni na stred
+  ikony. Keď písmo alebo konkrétny znak v systéme nie sú, ticho sa použije
+  kreslená ikona.
+* **kreslená** – vlastná ikona vykreslená znamienkovými vzdialenostnými
+  funkciami. Hrany sú vyhladené, takže pekne vyzerá v 16, 20, 24 aj 32 px.
+* **percentá** – číslo v paneli a pod ním tenký prúžok nabitia.
 
 Ikona sa sama prispôsobí svetlému aj tmavému panelu úloh a mierke DPI
 (na obrazovkách so 150 % sa vykreslí vo vyššom rozlíšení, nie rozmazane).
-Pri nabití pod 20 % zožltne, pod 10 % sčervenie.
+Pri nabíjaní je zelená, pri nabití pod 20 % žltá a pod 10 % červená.
 
 ## Odkiaľ sa berie čas do plného nabitia
 
@@ -108,17 +122,39 @@ Uložené sú v `%APPDATA%\Bateria\config.json`:
 
 ```json
 {
-  "icon_mode": "battery",
+  "icon_mode": "system",
   "refresh_seconds": 2
 }
 ```
 
-* `icon_mode` – `battery` (obrys batérie) alebo `percent` (číslo v paneli).
+* `icon_mode` – `system` (znak zo systémového písma, predvolené),
+  `battery` (vlastná kreslená ikona) alebo `percent` (číslo v paneli).
   Prepína sa aj v ponuke pravého tlačidla.
 * `refresh_seconds` – ako často sa meria (1 až 60 sekúnd).
 
 Pri poškodenom súbore sa použijú predvolené hodnoty; aplikácia sa kvôli
 nastaveniam nikdy nezastaví.
+
+## Keď sa ikona neobjaví
+
+Windows 11 nové ikony v paneli **schováva pod šípku `^`** vedľa hodín. Pri
+prvom spustení preto aplikácia ukáže bublinu, že beží. Ikonu odtiaľ stačí
+potiahnuť myšou na panel, prípadne ju zapnúť v *Nastavenia → Prispôsobenie →
+Panel úloh → Iné ikony na systémovej lište*.
+
+Ak sa nestane vôbec nič:
+
+```powershell
+.\bateria.exe -diag
+```
+
+Otvorí sa okno s tým, čo aplikácia v systéme vidí – či nájde batériu, aký
+tok energie hlási ovládač, akú veľkosť má mať ikona a či je k dispozícii
+systémové písmo symbolov. Keď aplikácia spadne, chybu zapíše do
+`%TEMP%\bateria-chyba.txt` a ukáže ju v okne, takže nikdy nezmizne bez slova.
+
+Ak `bateria.exe` zmizne hneď po stiahnutí, pravdepodobne ho odstránil
+antivírus alebo SmartScreen – program nie je podpísaný certifikátom.
 
 ## Ako je to poskladané
 
@@ -126,7 +162,8 @@ nastaveniam nikdy nezastaví.
 cmd/bateria      spustiteľný program
 cmd/icongen      vygeneruje assets/app.ico a docs/ikony.png zo zdrojáku ikony
 internal/battery stav batérie + odhady časov (jadro, plne otestované)
-internal/icon    kreslenie ikony (SDF, vyhladené hrany, ostré číslice)
+internal/icon    kreslenie ikony (SDF, vyhladené hrany, ostré číslice),
+                 mapovanie stavu na znak systémového písma a práca s maskou
 internal/config  nastavenia
 internal/win     tenká vrstva nad Win32 API (bez externých závislostí)
 internal/winui   ikona v paneli, ponuka, okno s podrobnosťami
