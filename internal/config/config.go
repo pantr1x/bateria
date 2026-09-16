@@ -33,8 +33,9 @@ type Config struct {
 	// PanelDisabled vypína text priamo v paneli úloh. Je to záporná voľba,
 	// aby staršie súbory s nastaveniami mali text zapnutý.
 	PanelDisabled bool `json:"panel_disabled"`
-	// PanelOffset je vzdialenosť textu od pravého okraja panela v bodoch.
-	PanelOffset int `json:"panel_offset"`
+	// PanelGap je medzera medzi textom a systémovou oblasťou (wifi/zvuk/
+	// batéria) v bodoch. Poloha textu je inak automatická.
+	PanelGap int `json:"panel_gap"`
 	// TrayPromoted si pamätá, že sme ikonu už raz vytiahli z prepadovej
 	// ponuky do panela úloh. Druhý raz to aplikácia nerobí – keby si ju
 	// používateľ medzitým schoval, nemá mu to prepisovať späť.
@@ -43,7 +44,7 @@ type Config struct {
 
 // Default vráti predvolené nastavenia.
 func Default() Config {
-	return Config{IconMode: IconTime, RefreshSeconds: 2, PanelOffset: 200}
+	return Config{IconMode: IconTime, RefreshSeconds: 2, PanelGap: 8}
 }
 
 // Path vráti cestu k súboru s nastaveniami (%APPDATA%\Bateria\config.json).
@@ -76,8 +77,8 @@ func Load(path string) Config {
 	}
 	c.TrayPromoted = loaded.TrayPromoted
 	c.PanelDisabled = loaded.PanelDisabled
-	if loaded.PanelOffset > 0 && loaded.PanelOffset <= 4000 {
-		c.PanelOffset = loaded.PanelOffset
+	if loaded.PanelGap > 0 && loaded.PanelGap <= 400 {
+		c.PanelGap = loaded.PanelGap
 	}
 	if loaded.DrainPerHour > 0 {
 		c.DrainPerHour = loaded.DrainPerHour

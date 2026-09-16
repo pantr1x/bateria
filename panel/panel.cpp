@@ -1,18 +1,24 @@
 // bateria-panel.exe – text so zostávajúcim časom priamo v paneli úloh.
 //
 // Okno s textom sa vytvára ako POTOMOK okna panela úloh (Shell_TrayWnd).
-// Nie je to teda voľne plávajúce okno „prilepené navrch": Windows ho
-// oreže na plochu panela, posúva ho spolu s ním, skryje ho, keď sa panel
-// skryje, a zruší ho, keď panel zanikne.
+// Nie je to teda voľne plávajúce okno „prilepené navrch": Windows ho oreže
+// na plochu panela, posúva ho spolu s ním, skryje ho, keď sa panel skryje,
+// a zruší ho, keď panel zanikne.
 //
-// Zámerne to je samostatný program, nie súčasť hlavnej aplikácie. Okno
-// potomka cudzieho procesu zdieľa s panelom vstupnú frontu, takže keby
-// sa vlákno tohto okna na čokoľvek zaseklo, zaseklo by aj panel úloh.
-// Tento program preto nerobí nič iné než kreslí text, ktorý dostane –
-// žiadne čítanie batérie, žiadne súbory, žiadne čakanie.
+// Polohu si okno hľadá samo: umiestni sa tesne naľavo od systémovej oblasti
+// (wifi/zvuk/batéria a hodiny), takže text vyjde hneď vedľa nej bez toho, aby
+// ho používateľ musel niekam ťahať. Keď sa oblasť nenájde, použije sa
+// rozumné odsadenie od pravého okraja.
+//
+// Zámerne je to samostatný program, nie súčasť hlavnej aplikácie. Okno
+// potomka cudzieho procesu zdieľa s panelom vstupnú frontu, takže keby sa
+// jeho vlákno na čokoľvek zaseklo, zaseklo by aj panel úloh. Tento program
+// preto nerobí nič iné než kreslí text, ktorý dostane – žiadne čítanie
+// batérie, žiadne súbory, žiadne čakanie.
 //
 // Preklad (na Linuxe aj vo Windowse s MinGW):
-//   x86_64-w64-mingw32-g++ -O2 -s -static -mwindows -o bateria-panel.exe panel.cpp -lgdi32
+//   x86_64-w64-mingw32-g++ -O2 -s -static -mwindows -municode \
+//       -o bateria-panel.exe panel.cpp -lgdi32
 
 #include <windows.h>
 #include <stdint.h>
@@ -24,21 +30,18 @@ static const wchar_t kAppClass[]   = L"BateriaTrayWindow";
 // Údaje, ktoré posiela hlavná aplikácia cez WM_COPYDATA.
 struct PanelUpdate {
     int32_t  version;    // 1
-    int32_t  offset;     // vzdialenosť od pravého okraja panela v bodoch
+    int32_t  gap;        // dodatočná medzera vľavo od systémovej oblasti (body)
     uint32_t textColor;  // COLORREF
     uint32_t flags;      // 1 = ukonči sa
     wchar_t  text[64];
 };
-
-// Rozloženie musí presne sedieť s Go stranou (internal/win/panel_windows.go).
 static_assert(sizeof(PanelUpdate) == 144, "PanelUpdate sa rozišiel s Go stranou");
 
 static const int kUpdateVersion = 1;
 static const uint32_t kFlagQuit = 1;
 
 // Udalosti, ktoré panel hlási späť hlavnej aplikácii.
-static const WPARAM kEventMenu   = 1; // používateľ klikol pravým tlačidlom
-static const WPARAM kEventOffset = 2; // používateľ posunul text
+static const WPARAM kEventMenu = 1; // používateľ klikol pravým tlačidlom
 
 static HWND      g_host        = NULL;
 static HWND      g_panel       = NULL;
@@ -47,38 +50,28 @@ static HFONT     g_font        = NULL;
 static int       g_fontHeight  = 0;
 static wchar_t   g_text[64]    = L"";
 static COLORREF  g_fg          = RGB(255, 255, 255);
-static int       g_offset      = 200;
+static int       g_gap         = 8;
 static UINT      g_taskbarCreated = 0;
 static UINT      g_panelEvent     = 0;
-static bool      g_dragging    = false;
-static int       g_dragStartX  = 0;
-static int       g_dragOffset  = 0;
 static int       g_appMissing  = 0;
-
-// enableDpiAwareness zapne škálovanie podľa monitora. Bez neho by sme na
-// obrazovkách s vyšším rozlíšením počítali polohu v nesprávnych bodoch.
-static void enableDpiAwareness() {
-    typedef BOOL(WINAPI * SetCtx)(HANDLE);
-    HMODULE user32 = GetModuleHandleW(L"user32.dll");
-    if (user32) {
-        SetCtx setCtx = (SetCtx)(void*)GetProcAddress(user32, "SetProcessDpiAwarenessContext");
-        // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 == (HANDLE)-4
-        if (setCtx && setCtx((HANDLE)(INT_PTR)-4)) return;
-    }
-    SetProcessDPIAware();
-}
-
-// cursorX je poloha myši na obrazovke. Pri ťahaní sa okno posúva pod
-// kurzorom, takže súradnice v okne by poskakovali.
-static int cursorX() {
-    POINT p;
-    return GetCursorPos(&p) ? p.x : 0;
-}
+static RECT      g_lastRect    = {0, 0, 0, 0};
 
 static const UINT kTimerId       = 1;
 static const int  kTimerMs       = 1000;
 static const int  kPaddingPx     = 10;
 static const int  kAppMissesQuit = 8; // po ôsmich sekundách bez aplikácie končíme
+
+// enableDpiAwareness zapne škálovanie podľa monitora, inak by sme počítali
+// polohu v nesprávnych bodoch na obrazovkách s vyšším rozlíšením.
+static void enableDpiAwareness() {
+    typedef BOOL(WINAPI * SetCtx)(HANDLE);
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (user32) {
+        SetCtx setCtx = (SetCtx)(void*)GetProcAddress(user32, "SetProcessDpiAwarenessContext");
+        if (setCtx && setCtx((HANDLE)(INT_PTR)-4)) return; // PER_MONITOR_AWARE_V2
+    }
+    SetProcessDPIAware();
+}
 
 // notifyApp pošle udalosť hlavnej aplikácii. Keď nebeží, nestane sa nič.
 static void notifyApp(WPARAM event, LPARAM value) {
@@ -112,7 +105,6 @@ static void makeFont(int taskbarHeight) {
     g_fontHeight = height;
 }
 
-// textWidth zmeria šírku textu aktuálnym písmom.
 static int textWidth(const wchar_t* text) {
     HDC dc = GetDC(NULL);
     if (!dc) return 80;
@@ -124,9 +116,9 @@ static int textWidth(const wchar_t* text) {
     return size.cx;
 }
 
-// sampleBackground odkukne farbu panela hneď vedľa nášho okna, aby text
-// splynul s pozadím – panel býva tmavý, svetlý aj priehľadný s nádychom
-// zvýrazňovacej farby a hádať by sa to nedalo.
+// sampleBackground odkukne farbu panela vedľa nášho okna, aby text splynul
+// s pozadím – panel býva tmavý, svetlý aj priehľadný s nádychom zvýrazňovacej
+// farby a hádať by sa to nedalo.
 static COLORREF sampleBackground(const RECT& panelScreenRect) {
     int y = (panelScreenRect.top + panelScreenRect.bottom) / 2;
     int x = panelScreenRect.left - 6;
@@ -138,7 +130,6 @@ static COLORREF sampleBackground(const RECT& panelScreenRect) {
     ReleaseDC(NULL, screen);
 
     if (c == CLR_INVALID) {
-        // Záloha podľa toho, či je panel svetlý alebo tmavý.
         HKEY key;
         DWORD light = 0, size = sizeof(light), type = 0;
         if (RegOpenKeyExW(HKEY_CURRENT_USER,
@@ -152,7 +143,23 @@ static COLORREF sampleBackground(const RECT& panelScreenRect) {
     return c;
 }
 
-static RECT g_lastRect = {0, 0, 0, 0};
+// trayLeftInTaskbar zistí, kde v paneli začína systémová oblasť (wifi, zvuk,
+// batéria a hodiny). Náš text patrí tesne naľavo od nej. Vráti -1, keď sa
+// oblasť nenájde – vtedy sa použije odsadenie od pravého okraja.
+static int trayLeftInTaskbar(const RECT& taskbarClient) {
+    if (!g_taskbar) return -1;
+    // Systémová oblasť je potomok panela s triedou TrayNotifyWnd; existuje
+    // aj vo Windows 11, hoci jej vnútro je už XAML.
+    HWND tray = FindWindowExW(g_taskbar, NULL, L"TrayNotifyWnd", NULL);
+    if (!tray) return -1;
+    RECT r;
+    if (!GetWindowRect(tray, &r)) return -1;
+
+    POINT p = {r.left, r.top};
+    ScreenToClient(g_taskbar, &p);
+    if (p.x <= taskbarClient.left || p.x > taskbarClient.right) return -1;
+    return p.x;
+}
 
 static void layoutPanel() {
     if (!g_panel || !g_taskbar || !IsWindow(g_taskbar)) return;
@@ -165,7 +172,11 @@ static void layoutPanel() {
     int width = textWidth(g_text) + kPaddingPx * 2;
     if (width < 24) width = 24;
 
-    int x = client.right - g_offset - width;
+    // Pravý okraj textu je tesne naľavo od systémovej oblasti; keď sa nenájde,
+    // odsadíme sa od pravého okraja panela tak, aby sme minuli hodiny.
+    int trayLeft = trayLeftInTaskbar(client);
+    int right = (trayLeft >= 0) ? trayLeft - g_gap : client.right - 220;
+    int x = right - width;
     if (x < 0) x = 0;
     if (x + width > client.right) x = client.right - width;
 
@@ -173,7 +184,7 @@ static void layoutPanel() {
     if (want.left != g_lastRect.left || want.top != g_lastRect.top ||
         want.right != g_lastRect.right || want.bottom != g_lastRect.bottom) {
         // Presúvame len pri skutočnej zmene: opakované SetWindowPos na
-        // potomkovi panela úloh zbytočne prekresľuje a bliká.
+        // potomkovi panela zbytočne prekresľuje a bliká.
         g_lastRect = want;
         SetWindowPos(g_panel, HWND_TOP, x, client.top, width, height,
                      SWP_NOACTIVATE | SWP_SHOWWINDOW);
@@ -224,33 +235,12 @@ static LRESULT CALLBACK panelProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEACTIVATE:
         return MA_NOACTIVATE; // kliknutie nesmie prebrať zameranie panelu
     case WM_NCHITTEST:
-        // Bez Ctrl je okno pre myš priehľadné: kliknutia idú tomu, čo je
-        // pod ním, takže text nikomu neprekáža. S Ctrl sa dá potiahnuť.
-        return (GetKeyState(VK_CONTROL) & 0x8000) ? HTCLIENT : HTTRANSPARENT;
-    case WM_LBUTTONDOWN:
-        g_dragging = true;
-        g_dragStartX = cursorX();
-        g_dragOffset = g_offset;
-        SetCapture(hwnd);
-        return 0;
-    case WM_MOUSEMOVE:
-        if (g_dragging) {
-            int dx = cursorX() - g_dragStartX;
-            int next = g_dragOffset - dx; // odsadenie sa meria sprava
-            if (next < 0) next = 0;
-            if (next > 4000) next = 4000;
-            if (next != g_offset) {
-                g_offset = next;
-                layoutPanel();
-            }
-        }
-        return 0;
+        // Ľavé kliknutie nechávame prejsť tomu, čo je pod textom, nech nič
+        // neprekáža; pravé tlačidlo spracujeme pre ponuku.
+        return HTCLIENT;
     case WM_LBUTTONUP:
-        if (g_dragging) {
-            g_dragging = false;
-            ReleaseCapture();
-            notifyApp(kEventOffset, (LPARAM)g_offset);
-        }
+        // Preposlať kliknutie panelu úloh pod nami by bolo krehké; radšej
+        // nerobíme nič, text je len na pozeranie.
         return 0;
     case WM_RBUTTONUP:
         notifyApp(kEventMenu, 0);
@@ -259,7 +249,6 @@ static LRESULT CALLBACK panelProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-// ensurePanel vytvorí okno v paneli úloh, ak tam ešte (alebo už) nie je.
 static void ensurePanel() {
     if (g_panel && IsWindow(g_panel) && g_taskbar && IsWindow(g_taskbar)) return;
 
@@ -282,7 +271,6 @@ static void ensurePanel() {
 
 static LRESULT CALLBACK hostProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (g_taskbarCreated && msg == g_taskbarCreated) {
-        // Prieskumník sa reštartoval a panel úloh vznikol nanovo.
         g_panel = NULL;
         g_taskbar = NULL;
         ensurePanel();
@@ -302,20 +290,17 @@ static LRESULT CALLBACK hostProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         update.text[63] = 0;
         lstrcpynW(g_text, update.text, 64);
         g_fg = (COLORREF)update.textColor;
-        if (update.offset >= 0) g_offset = update.offset;
+        if (update.gap >= 0 && update.gap <= 400) g_gap = update.gap;
         g_appMissing = 0;
         ensurePanel();
+        g_lastRect.left = g_lastRect.right = 0; // text sa zmenil, prepočítaj
         layoutPanel();
-        // Odpoveď hovorí aplikácii, či text v paneli naozaj vidno. Keby sa
-        // okno v paneli nepodarilo vytvoriť, aplikácia musí čas ukázať
-        // aspoň v ikone.
         return (g_panel && IsWindow(g_panel)) ? 1 : 0;
     }
     case WM_TIMER:
         if (wp == kTimerId) {
             ensurePanel();
             layoutPanel();
-            // Keď hlavná aplikácia skončí, nemá zmysel tu zostať.
             if (FindWindowW(kAppClass, NULL) == NULL) {
                 if (++g_appMissing >= kAppMissesQuit) PostQuitMessage(0);
             } else {
@@ -331,9 +316,7 @@ static LRESULT CALLBACK hostProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
-    // Druhá inštancia nemá čo robiť.
-    if (FindWindowW(kHostClass, NULL)) return 0;
-
+    if (FindWindowW(kHostClass, NULL)) return 0; // druhá inštancia netreba
     enableDpiAwareness();
 
     WNDCLASSEXW host = {sizeof(host)};

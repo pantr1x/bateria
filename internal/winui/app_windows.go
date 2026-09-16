@@ -241,15 +241,8 @@ func trayWndProc(hwnd win.HWND, msg uint32, wparam, lparam uintptr) uintptr {
 		return 0
 	}
 	if msgPanelEvent != 0 && msg == msgPanelEvent {
-		switch wparam {
-		case win.PanelEventMenu:
+		if wparam == win.PanelEventMenu {
 			a.showMenu()
-		case win.PanelEventOffset:
-			// Používateľ potiahol text po paneli – zapamätáme si polohu.
-			if off := int(int32(lparam)); off >= 0 && off <= 4000 {
-				a.cfg.PanelOffset = off
-				a.saveConfig()
-			}
 		}
 		return 0
 	}

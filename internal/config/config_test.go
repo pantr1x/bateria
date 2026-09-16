@@ -25,7 +25,7 @@ func TestLoadBrokenFileGivesDefaults(t *testing.T) {
 
 func TestSaveLoadRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "podpriecinok", "config.json")
-	want := Config{IconMode: IconPercent, RefreshSeconds: 5, PanelOffset: 240}
+	want := Config{IconMode: IconPercent, RefreshSeconds: 5, PanelGap: 240}
 	if err := Save(p, want); err != nil {
 		t.Fatal(err)
 	}
@@ -46,14 +46,14 @@ func TestPanelEnabledByDefault(t *testing.T) {
 	if got.PanelDisabled {
 		t.Error("text v paneli mal zostať zapnutý")
 	}
-	if got.PanelOffset != Default().PanelOffset {
-		t.Errorf("odsadenie = %d, chcem predvolené %d", got.PanelOffset, Default().PanelOffset)
+	if got.PanelGap != Default().PanelGap {
+		t.Errorf("medzera = %d, chcem predvolenú %d", got.PanelGap, Default().PanelGap)
 	}
 }
 
 func TestLoadRejectsOutOfRange(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(p, []byte(`{"icon_mode":"hviezda","refresh_seconds":9999,"panel_offset":99999}`), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(`{"icon_mode":"hviezda","refresh_seconds":9999,"panel_gap":99999}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got := Load(p)
@@ -63,7 +63,7 @@ func TestLoadRejectsOutOfRange(t *testing.T) {
 	if got.RefreshSeconds != Default().RefreshSeconds {
 		t.Errorf("neplatná perióda sa mala zahodiť, je %d", got.RefreshSeconds)
 	}
-	if got.PanelOffset != Default().PanelOffset {
-		t.Errorf("neplatné odsadenie sa malo zahodiť, je %d", got.PanelOffset)
+	if got.PanelGap != Default().PanelGap {
+		t.Errorf("neplatná medzera sa mala zahodiť, je %d", got.PanelGap)
 	}
 }

@@ -40,13 +40,12 @@ Jeho okno je **potomkom okna panela úloh** (`Shell_TrayWnd`), nie voľne
 plávajúcim oknom navrchu: Windows ho oreže na plochu panela, posúva ho spolu
 s ním, skryje ho, keď sa panel skryje, a zruší ho, keď panel zanikne.
 
-* **Posunutie:** podržať `Ctrl` a potiahnuť text myšou. Poloha sa uloží
-  a drží sa pravého okraja panela, takže sa nehýbe, keď pribudnú ikony vľavo.
-* **Bez `Ctrl`** je text pre myš priehľadný – kliknutia idú tomu, čo je pod
-  ním, takže nič neprekáža.
-* **Pravé tlačidlo** otvorí rovnakú ponuku ako ikona.
-* Vypnúť sa dá v ponuke položkou *Text v paneli úloh*. Keď je zapnutý, ikona
-  ukazuje obrys batérie, aby sa ten istý údaj nezobrazoval dvakrát.
+**Polohu si okno hľadá samo** – umiestni sa tesne naľavo od systémovej oblasti
+(wifi/zvuk/batéria a hodiny), takže text vyjde hneď vedľa nej. Nič netreba
+ťahať. Pozadie si odkukne z panela, takže splynie pri tmavom, svetlom aj
+priehľadnom paneli. Pravé tlačidlo otvorí rovnakú ponuku ako ikona; vypnúť sa
+dá v ponuke položkou *Text v paneli úloh*. Kým je text v paneli vidno, ikona
+ukazuje obrys batérie, aby sa ten istý údaj nezobrazoval dvakrát.
 
 Je to zámerne samostatný program, nie súčasť hlavnej aplikácie: okno potomka
 cudzieho procesu zdieľa s panelom vstupnú frontu, takže čokoľvek pomalé v tom

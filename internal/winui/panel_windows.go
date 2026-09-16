@@ -59,12 +59,12 @@ func (a *App) updatePanel() {
 		a.panelActive = false
 		return
 	}
-	offset := int32(-1)
-	if a.cfg.PanelOffset > 0 {
-		offset = int32(a.cfg.PanelOffset)
+	gap := int32(-1)
+	if a.cfg.PanelGap > 0 {
+		gap = int32(a.cfg.PanelGap)
 	}
 	a.panelActive = win.UpdatePanel(panelText(a.status),
-		panelColor(a.status, win.TaskbarUsesLightTheme()), offset)
+		panelColor(a.status, win.TaskbarUsesLightTheme()), gap)
 	if !a.panelActive {
 		a.startPanel()
 	}

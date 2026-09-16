@@ -15,8 +15,7 @@ const PanelEventMessage = "BateriaPanelEvent"
 
 // Udalosti od panela.
 const (
-	PanelEventMenu   = 1 // kliknutie pravým tlačidlom na text
-	PanelEventOffset = 2 // používateľ text posunul, v lParam je nové odsadenie
+	PanelEventMenu = 1 // kliknutie pravým tlačidlom na text
 )
 
 const (
@@ -30,7 +29,7 @@ const (
 // panelUpdate musí presne zodpovedať štruktúre PanelUpdate v panel.cpp.
 type panelUpdate struct {
 	Version   int32
-	Offset    int32
+	Gap       int32 // medzera vľavo od systémovej oblasti v bodoch
 	TextColor uint32
 	Flags     uint32
 	Text      [64]uint16
@@ -54,23 +53,23 @@ var procSendMessageTimeout = user32.proc("SendMessageTimeoutW")
 // PanelRunning hovorí, či program s textom beží.
 func PanelRunning() bool { return FindWindow(PanelClass) != 0 }
 
-// UpdatePanel pošle panelu text, farbu a odsadenie od pravého okraja.
-// Odsadenie -1 znamená „nechaj, ako je“. Vráti false, keď panel nebeží.
-func UpdatePanel(text string, color Color, offset int32) bool {
-	return sendPanel(text, color, offset, 0)
+// UpdatePanel pošle panelu text, farbu a medzeru vľavo od systémovej oblasti.
+// Medzera -1 znamená „nechaj, ako je“. Vráti false, keď panel nebeží.
+func UpdatePanel(text string, color Color, gap int32) bool {
+	return sendPanel(text, color, gap, 0)
 }
 
 // ClosePanel požiada panel, aby sa ukončil.
 func ClosePanel() { sendPanel("", 0, -1, panelFlagQuit) }
 
-func sendPanel(text string, color Color, offset int32, flags uint32) bool {
+func sendPanel(text string, color Color, gap int32, flags uint32) bool {
 	hwnd := FindWindow(PanelClass)
 	if hwnd == 0 {
 		return false
 	}
 	u := panelUpdate{
 		Version:   panelUpdateVersion,
-		Offset:    offset,
+		Gap:       gap,
 		TextColor: uint32(color),
 		Flags:     flags,
 	}
