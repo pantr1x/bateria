@@ -30,6 +30,17 @@ func Diagnose() string {
 		line("Beh: aplikácia zatiaľ nebeží")
 	}
 
+	if exe != "" {
+		switch on, err := win.TrayIconPromoted(exe); {
+		case err != nil:
+			line("Ikona priamo v paneli: %v", err)
+		case on:
+			line("Ikona priamo v paneli: áno")
+		default:
+			line("Ikona priamo v paneli: nie (je skrytá pod šípkou ^)")
+		}
+	}
+
 	if p, err := config.Path(); err == nil {
 		stav := "zatiaľ neexistuje"
 		if _, err := os.Stat(p); err == nil {

@@ -23,6 +23,10 @@ type Config struct {
 	IconMode string `json:"icon_mode"`
 	// RefreshSeconds je perióda merania v sekundách.
 	RefreshSeconds int `json:"refresh_seconds"`
+	// TrayPromoted si pamätá, že sme ikonu už raz vytiahli z prepadovej
+	// ponuky do panela úloh. Druhý raz to aplikácia nerobí – keby si ju
+	// používateľ medzitým schoval, nemá mu to prepisovať späť.
+	TrayPromoted bool `json:"tray_promoted"`
 }
 
 // Default vráti predvolené nastavenia.
@@ -58,6 +62,7 @@ func Load(path string) Config {
 	if loaded.RefreshSeconds >= 1 && loaded.RefreshSeconds <= 60 {
 		c.RefreshSeconds = loaded.RefreshSeconds
 	}
+	c.TrayPromoted = loaded.TrayPromoted
 	return c
 }
 

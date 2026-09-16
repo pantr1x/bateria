@@ -21,6 +21,7 @@ const (
 	trayIconID      = 1
 	msgTrayCallback = win.WMApp + 1
 	timerRefresh    = 1
+	timerPromote    = 2
 )
 
 // Položky kontextovej ponuky.
@@ -30,6 +31,7 @@ const (
 	cmdModeBattery
 	cmdModePercent
 	cmdAutostart
+	cmdPromote
 	cmdExit
 )
 
@@ -48,6 +50,7 @@ type App struct {
 	iconHandle     uintptr
 	iconKey        string
 	menuOpen       bool
+	promoteTries   int
 }
 
 var (
@@ -106,9 +109,12 @@ func Run() error {
 		a.tray.Balloon("Batéria beží",
 			"Ikona je pri hodinách. Ak ju nevidíš, je skrytá pod šípkou ^ – "+
 				"stačí ju odtiaľ potiahnuť myšou na panel úloh.")
-		if a.cfgPath != "" {
-			_ = config.Save(a.cfgPath, a.cfg)
-		}
+		a.saveConfig()
+	}
+	if !a.cfg.TrayPromoted {
+		// Prieskumník si ikonu zapíše do registra až chvíľu po jej pridaní,
+		// preto sa o vytiahnutie z prepadovej ponuky pokúsime až o chvíľu.
+		win.SetTimer(a.hwnd, timerPromote, 2000)
 	}
 	win.SetTimer(a.hwnd, timerRefresh, uint32(a.cfg.RefreshSeconds)*1000)
 
@@ -134,8 +140,12 @@ func trayWndProc(hwnd win.HWND, msg uint32, wparam, lparam uintptr) uintptr {
 		return 0
 
 	case win.WMTimer:
-		if wparam == timerRefresh {
+		switch wparam {
+		case timerRefresh:
 			a.refresh()
+		case timerPromote:
+			win.KillTimer(a.hwnd, timerPromote)
+			a.promoteIcon(false)
 		}
 		return 0
 
@@ -304,6 +314,7 @@ func (a *App) showMenu() {
 	m.Item(cmdModePercent, "Ikona: percentá", a.cfg.IconMode == config.IconPercent, false)
 	m.Separator()
 	m.Item(cmdAutostart, "Spúšťať s Windowsom", win.AutostartEnabled(), false)
+	m.Item(cmdPromote, "Zobraziť ikonu vždy v paneli", a.iconPromoted(), false)
 	m.Separator()
 	m.Item(cmdExit, "Ukončiť", false, false)
 
@@ -324,6 +335,8 @@ func (a *App) command(id uint32) {
 		a.setIconMode(config.IconPercent)
 	case cmdAutostart:
 		a.toggleAutostart()
+	case cmdPromote:
+		a.promoteIcon(true)
 	case cmdExit:
 		win.DestroyWindow(a.hwnd)
 	}
@@ -335,10 +348,71 @@ func (a *App) setIconMode(mode string) {
 	}
 	a.cfg.IconMode = mode
 	a.iconKey = ""
+	a.saveConfig()
+	a.refresh()
+}
+
+// iconPromoted povie, či Windows ikonu ukazuje priamo v paneli úloh.
+func (a *App) iconPromoted() bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	on, err := win.TrayIconPromoted(exe)
+	return err == nil && on
+}
+
+// promoteIcon vytiahne ikonu z prepadovej ponuky pod šípkou priamo do panela
+// úloh. Pri vyvolaní z ponuky funguje ako prepínač a výsledok ohlási.
+func (a *App) promoteIcon(interactive bool) {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	want := true
+	if interactive {
+		want = !a.iconPromoted()
+	}
+
+	if err := win.SetTrayIconPromoted(exe, want); err != nil {
+		if !interactive {
+			// Prieskumník o ikone ešte nevie – skúsime to o chvíľu znova.
+			if a.promoteTries < 3 {
+				a.promoteTries++
+				win.SetTimer(a.hwnd, timerPromote, 5000)
+			}
+			return
+		}
+		win.MessageBox("Batéria",
+			"Ikonu sa nepodarilo natrvalo zobraziť v paneli úloh:\n"+err.Error()+
+				"\n\nDá sa to zapnúť aj ručne: Nastavenia → Prispôsobenie → "+
+				"Panel úloh → Iné ikony na systémovej lište.", win.MBIconError)
+		return
+	}
+
+	a.cfg.TrayPromoted = true
+	a.saveConfig()
+	// Prieskumník nastavenie načíta, keď ikonu pridáme nanovo.
+	a.tray.Remove()
+	a.tray.Add()
+	a.iconKey = ""
+	a.refresh()
+
+	if interactive {
+		msg := "Ikona sa bude zobrazovať priamo v paneli úloh."
+		if !want {
+			msg = "Ikona sa presunie späť do prepadovej ponuky pod šípkou."
+		}
+		win.MessageBox("Batéria",
+			msg+"\n\nAk sa zmena neprejaví hneď, stačí sa odhlásiť a znova "+
+				"prihlásiť do Windowsu.", win.MBIconInfo)
+	}
+}
+
+func (a *App) saveConfig() {
 	if a.cfgPath != "" {
 		_ = config.Save(a.cfgPath, a.cfg)
 	}
-	a.refresh()
 }
 
 func (a *App) toggleAutostart() {

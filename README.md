@@ -137,10 +137,24 @@ nastaveniam nikdy nezastaví.
 
 ## Keď sa ikona neobjaví
 
-Windows 11 nové ikony v paneli **schováva pod šípku `^`** vedľa hodín. Pri
-prvom spustení preto aplikácia ukáže bublinu, že beží. Ikonu odtiaľ stačí
-potiahnuť myšou na panel, prípadne ju zapnúť v *Nastavenia → Prispôsobenie →
-Panel úloh → Iné ikony na systémovej lište*.
+Windows 11 nové ikony v paneli **schováva pod šípku `^`** vedľa hodín.
+Viditeľnosť si pamätá v registri pod
+`HKCU\Control Panel\NotifyIconSettings`: každá aplikácia tam má podkľúč
+s cestou k programu a hodnotou `IsPromoted` (1 = priamo v paneli).
+
+Aplikácia si preto pri prvom spustení sama nastaví `IsPromoted` na svojom
+vlastnom zázname – podkľúč vytvára Prieskumník, až keď ikonu prvýkrát uvidí,
+takže sa o to pokúsi dve sekundy po štarte a v prípade potreby to ešte
+párkrát zopakuje. Mení len svoj vlastný záznam a len raz: keď si ju
+používateľ neskôr schová, aplikácia mu to späť neprepíše.
+
+Ručne sa to dá kedykoľvek prepnúť v ponuke pravého tlačidla položkou
+**Zobraziť ikonu vždy v paneli**, prípadne v *Nastavenia → Prispôsobenie →
+Panel úloh → Iné ikony na systémovej lište*. Ak sa zmena neprejaví hneď,
+pomôže odhlásenie a prihlásenie do Windowsu.
+
+Vo Windowse 10 sa ikony ovládajú inde – *Nastavenia → Prispôsobenie → Panel
+úloh → Vybrať ikony zobrazené na paneli úloh*.
 
 Ak sa nestane vôbec nič:
 
