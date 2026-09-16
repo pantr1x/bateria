@@ -326,7 +326,12 @@ func (t *TrayIcon) data(flags uint32) *notifyIconData {
 
 // Add zaregistruje ikonu. Volá sa aj po reštarte Prieskumníka.
 func (t *TrayIcon) Add() bool {
-	d := t.data(nifMessage | nifIcon | nifTip | nifShowTip)
+	flags := uint32(nifMessage | nifTip | nifShowTip)
+	if t.icon != 0 {
+		// S príznakom NIF_ICON a prázdnou ikonou by registrácia zlyhala.
+		flags |= nifIcon
+	}
+	d := t.data(flags)
 	r, _ := procShellNotifyIcon.Call(nimAdd, uintptr(unsafe.Pointer(d)))
 	if r == 0 {
 		return false

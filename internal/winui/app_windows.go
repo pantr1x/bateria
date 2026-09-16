@@ -50,8 +50,8 @@ type App struct {
 }
 
 var (
-	app          *App
-	trayProcOnce = syscall.NewCallback(trayWndProc)
+	app      *App
+	trayProc = syscall.NewCallback(trayWndProc)
 )
 
 // Run spustí aplikáciu a vráti sa, až keď sa ukončí.
@@ -72,7 +72,7 @@ func Run() error {
 
 	inst := win.ModuleHandle()
 	class := win.WndClassEx{
-		WndProc:   trayProcOnce,
+		WndProc:   trayProc,
 		Instance:  inst,
 		Cursor:    win.LoadArrowCursor(),
 		ClassName: win.Str(trayClassName),
@@ -164,8 +164,9 @@ func (a *App) refresh() {
 // Bublinu s časom treba nastaviť vždy – mení sa aj pri rovnakom obrázku.
 func (a *App) updateIcon() {
 	size := trayIconSize()
+	light := win.TaskbarUsesLightTheme()
 	theme := icon.DarkTaskbar()
-	if win.TaskbarUsesLightTheme() {
+	if light {
 		theme = icon.LightTaskbar()
 	}
 	mode := icon.ModeBattery
@@ -173,7 +174,7 @@ func (a *App) updateIcon() {
 		mode = icon.ModePercent
 	}
 	charging := a.status.State == battery.StateCharging
-	key := fmt.Sprintf("%d|%v|%d|%d|%v|%v", size, win.TaskbarUsesLightTheme(), mode,
+	key := fmt.Sprintf("%d|%v|%d|%d|%v|%v", size, light, mode,
 		int(math.Round(a.status.Percent)), charging, a.status.Present)
 
 	if key != a.iconKey || a.iconHandle == 0 {

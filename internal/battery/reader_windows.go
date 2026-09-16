@@ -48,6 +48,10 @@ func Read() (Status, error) {
 	}
 	if s.State != StateCharging {
 		s.State = restState(s)
+	} else if s.Percent >= 100 || (s.FullCapacity > 0 && s.Capacity >= s.FullCapacity) {
+		// Niektoré ovládače hlásia nabíjanie aj pri plnej batérii. Vtedy by
+		// sa čas do nabitia počítal z nuly, čo nedáva zmysel.
+		s.State = StateFull
 	}
 	return s, nil
 }

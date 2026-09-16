@@ -1,6 +1,7 @@
 package icon
 
 import (
+	"bytes"
 	"encoding/binary"
 	"image"
 	"testing"
@@ -105,6 +106,30 @@ func TestEncodeResourceIsBottomUpBGRA(t *testing.T) {
 	first := data[40 : 40+4]
 	if first[0] != 60 || first[1] != 50 || first[2] != 40 || first[3] != 128 {
 		t.Errorf("prvý pixel = %v, chcem BGRA spodného riadka {60 50 40 128}", first)
+	}
+}
+
+// Veľké obrázky sa v .ico ukladajú ako PNG, inak by súbor zbytočne narástol.
+func TestEncodeICOUsesPNGForLargeSizes(t *testing.T) {
+	small := Render(Spec{Size: 32, Theme: DarkTaskbar(), Percent: 50, Present: true})
+	large := Render(Spec{Size: 256, Theme: DarkTaskbar(), Percent: 50, Present: true})
+	data := EncodeICO(small, large)
+	le := binary.LittleEndian
+
+	offSmall := le.Uint32(data[6+12:])
+	if got := le.Uint32(data[offSmall:]); got != 40 {
+		t.Errorf("32 px sa mal uložiť ako DIB, začína %d", got)
+	}
+	offLarge := le.Uint32(data[6+16+12:])
+	pngMagic := []byte{0x89, 'P', 'N', 'G'}
+	if !bytes.Equal(data[offLarge:offLarge+4], pngMagic) {
+		t.Errorf("256 px sa mal uložiť ako PNG, začína % x", data[offLarge:offLarge+4])
+	}
+	if e := data[6+16:]; e[0] != 0 {
+		t.Errorf("256 px sa v hlavičke zapisuje ako 0, je %d", e[0])
+	}
+	if len(data) > 100*1024 {
+		t.Errorf("súbor má %d bajtov, to je zbytočne veľa", len(data))
 	}
 }
 

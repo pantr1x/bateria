@@ -1,9 +1,15 @@
 package icon
 
 import (
+	"bytes"
 	"encoding/binary"
 	"image"
+	"image/png"
 )
+
+// pngFromSize je veľkosť, od ktorej sa obrázok v súbore .ico ukladá ako PNG.
+// Nekomprimovaný 256×256 by sám zabral 256 kB.
+const pngFromSize = 64
 
 // EncodeResource zapíše obrázok v tvare, v akom ikonu očakáva Windows:
 // BITMAPINFOHEADER s dvojnásobnou výškou, potom farebné dáta (BGRA zdola
@@ -51,8 +57,14 @@ func EncodeICO(imgs ...*image.NRGBA) []byte {
 	body := []byte{}
 	offset := len(head)
 	for i, img := range imgs {
-		data := EncodeResource(img)
 		w, h := img.Bounds().Dx(), img.Bounds().Dy()
+		data := EncodeResource(img)
+		if w >= pngFromSize {
+			var buf bytes.Buffer
+			if err := png.Encode(&buf, img); err == nil {
+				data = buf.Bytes()
+			}
+		}
 		e := head[6+16*i:]
 		e[0] = byte(w % 256) // 256 sa zapisuje ako 0
 		e[1] = byte(h % 256)
