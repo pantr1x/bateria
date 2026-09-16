@@ -15,6 +15,8 @@ const (
 	IconBattery = "battery"
 	// IconPercent je číslo v percentách.
 	IconPercent = "percent"
+	// IconTime je zostávajúci čas ako text priamo v paneli („2:13“).
+	IconTime = "time"
 )
 
 // Config sú nastavenia uložené vo formáte JSON.
@@ -31,7 +33,7 @@ type Config struct {
 
 // Default vráti predvolené nastavenia.
 func Default() Config {
-	return Config{IconMode: IconSystem, RefreshSeconds: 2}
+	return Config{IconMode: IconTime, RefreshSeconds: 2}
 }
 
 // Path vráti cestu k súboru s nastaveniami (%APPDATA%\Bateria\config.json).
@@ -56,7 +58,7 @@ func Load(path string) Config {
 		return c
 	}
 	switch loaded.IconMode {
-	case IconSystem, IconBattery, IconPercent:
+	case IconSystem, IconBattery, IconPercent, IconTime:
 		c.IconMode = loaded.IconMode
 	}
 	if loaded.RefreshSeconds >= 1 && loaded.RefreshSeconds <= 60 {

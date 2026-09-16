@@ -31,6 +31,7 @@ const (
 // Položky kontextovej ponuky.
 const (
 	cmdDetails = iota + 100
+	cmdModeTime
 	cmdModeSystem
 	cmdModeBattery
 	cmdModePercent
@@ -303,9 +304,13 @@ func (a *App) applyReading() {
 func (a *App) updateIcon() {
 	size := trayIconSize()
 	light := win.TaskbarUsesLightTheme()
-	key := fmt.Sprintf("%d|%v|%s|%d|%v|%v", size, light, a.cfg.IconMode,
+	remaining := time.Duration(0)
+	if _, d, ok := a.status.Remaining(); ok {
+		remaining = d.Round(time.Minute)
+	}
+	key := fmt.Sprintf("%d|%v|%s|%d|%v|%v|%v", size, light, a.cfg.IconMode,
 		int(math.Round(a.status.Percent)), a.status.State == battery.StateCharging,
-		a.status.Present)
+		a.status.Present, remaining)
 
 	if key != a.iconKey || a.iconHandle == 0 {
 		img := iconImage(a.status, size, a.cfg.IconMode, light)
@@ -327,7 +332,12 @@ func iconImage(st battery.Status, size int32, mode string, light bool) *image.NR
 		Size: int(size), Theme: theme, Percent: st.Percent,
 		Charging: st.State == battery.StateCharging, Present: st.Present,
 	}
+	if _, d, ok := st.Remaining(); ok {
+		spec.Remaining = d
+	}
 	switch mode {
+	case config.IconTime:
+		spec.Mode = icon.ModeTime
 	case config.IconPercent:
 		spec.Mode = icon.ModePercent
 	case config.IconSystem:
@@ -418,6 +428,7 @@ func (a *App) showMenu() {
 	m.Separator()
 	m.Item(cmdDetails, "Podrobnosti…", false, false)
 	m.Separator()
+	m.Item(cmdModeTime, "Ikona: zostávajúci čas", a.cfg.IconMode == config.IconTime, false)
 	m.Item(cmdModeSystem, "Ikona: ako vo Windowse", a.cfg.IconMode == config.IconSystem, false)
 	m.Item(cmdModeBattery, "Ikona: vlastná", a.cfg.IconMode == config.IconBattery, false)
 	m.Item(cmdModePercent, "Ikona: percentá", a.cfg.IconMode == config.IconPercent, false)
@@ -436,6 +447,8 @@ func (a *App) command(id uint32) {
 	switch id {
 	case cmdDetails:
 		a.togglePopup()
+	case cmdModeTime:
+		a.setIconMode(config.IconTime)
 	case cmdModeSystem:
 		a.setIconMode(config.IconSystem)
 	case cmdModeBattery:

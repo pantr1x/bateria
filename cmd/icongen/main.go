@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/pantr1x/bateria/internal/icon"
 )
@@ -49,12 +50,18 @@ type shot struct {
 // paneli, zväčšený, aby bolo vidieť, čo robí vyhladzovanie hrán.
 func writePreview(path string) error {
 	states := []struct {
-		percent  float64
-		charging bool
-		present  bool
+		percent   float64
+		charging  bool
+		present   bool
+		remaining time.Duration
 	}{
-		{100, false, true}, {72, true, true}, {55, false, true},
-		{35, true, true}, {15, false, true}, {6, false, true}, {0, false, false},
+		{100, false, true, 5*time.Hour + 20*time.Minute},
+		{72, true, true, time.Hour + 12*time.Minute},
+		{55, false, true, 2*time.Hour + 13*time.Minute},
+		{35, true, true, 48 * time.Minute},
+		{15, false, true, 42 * time.Minute},
+		{6, false, true, 9 * time.Minute},
+		{0, false, false, 0},
 	}
 
 	const (
@@ -66,10 +73,11 @@ func writePreview(path string) error {
 		bg    color.NRGBA
 		mode  icon.Mode
 	}{
+		{icon.DarkTaskbar(), color.NRGBA{32, 32, 32, 255}, icon.ModeTime},
+		{icon.LightTaskbar(), color.NRGBA{243, 243, 243, 255}, icon.ModeTime},
 		{icon.DarkTaskbar(), color.NRGBA{32, 32, 32, 255}, icon.ModeBattery},
 		{icon.LightTaskbar(), color.NRGBA{243, 243, 243, 255}, icon.ModeBattery},
 		{icon.DarkTaskbar(), color.NRGBA{32, 32, 32, 255}, icon.ModePercent},
-		{icon.LightTaskbar(), color.NRGBA{243, 243, 243, 255}, icon.ModePercent},
 	}
 
 	w := cell * len(states)
@@ -81,6 +89,7 @@ func writePreview(path string) error {
 			img := icon.Render(icon.Spec{
 				Size: 16, Mode: row.mode, Theme: row.theme,
 				Percent: st.percent, Charging: st.charging, Present: st.present,
+				Remaining: st.remaining,
 			})
 			// Zväčšenie bez interpolácie – nech je vidieť skutočné pixely.
 			for y := 0; y < 16*zoom; y++ {

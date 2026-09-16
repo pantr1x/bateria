@@ -6,9 +6,11 @@
 package icon
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"math"
+	"time"
 )
 
 // Mode určuje, čo je v ikone vidieť.
@@ -19,6 +21,8 @@ const (
 	ModeBattery Mode = iota
 	// ModePercent – číslo v percentách a tenký prúžok nabitia pod ním.
 	ModePercent
+	// ModeTime – zostávajúci čas ako text (napr. „2:13“) a prúžok nabitia.
+	ModeTime
 )
 
 // Theme sú farby ikony. Panel úloh býva tmavý (svetlá ikona) alebo svetlý.
@@ -57,6 +61,10 @@ type Spec struct {
 	Percent  float64
 	Charging bool
 	Present  bool
+
+	// Remaining je zostávajúci čas do nabitia alebo do vybitia. Používa sa
+	// v režime ModeTime; nula znamená, že odhad zatiaľ nie je.
+	Remaining time.Duration
 }
 
 // Prahy, pri ktorých ikona mení farbu.
@@ -98,12 +106,44 @@ func Render(s Spec) *image.NRGBA {
 	// mala 16 px, a k je mierka na skutočnú veľkosť.
 	k := float64(s.Size) / 16
 
-	if s.Mode == ModePercent && s.Present {
-		drawPercent(c, s, k)
-		return c.img
+	if s.Present {
+		switch s.Mode {
+		case ModePercent:
+			drawTextIcon(c, s, k, PercentText(s.Percent))
+			return c.img
+		case ModeTime:
+			drawTextIcon(c, s, k, TimeText(s.Remaining, s.Percent))
+			return c.img
+		}
 	}
 	drawBattery(c, s, k)
 	return c.img
+}
+
+// PercentText je číslo nabitia tak, ako sa vypíše do ikony.
+func PercentText(percent float64) string {
+	return fmt.Sprintf("%d", int(math.Round(clamp(percent, 0, 100))))
+}
+
+// TimeText je zostávajúci čas tak, ako sa vypíše do ikony: „2:13“ sú dve
+// hodiny a trinásť minút. Od desiatich hodín vyššie sa minúty už nezmestia
+// a nie sú ani zaujímavé, preto ostane len „12h“. Kým odhad nie je, ukáže
+// sa aspoň percento – prázdna ikona v paneli nikomu nepomôže.
+func TimeText(remaining time.Duration, percent float64) string {
+	if remaining <= 0 {
+		p := PercentText(percent)
+		// Pri troch cifrách sa znak percenta do 16 px už nezmestí.
+		if len(p) <= 2 {
+			p += "%"
+		}
+		return p
+	}
+	total := int(math.Round(remaining.Minutes()))
+	h, m := total/60, total%60
+	if h >= 10 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%d:%02d", h, m)
 }
 
 func drawBattery(c *canvas, s Spec, k float64) {
@@ -154,36 +194,29 @@ func drawBattery(c *canvas, s Spec, k float64) {
 	}
 }
 
-func drawPercent(c *canvas, s Spec, k float64) {
+// drawTextIcon vykreslí do ikony text a pod neho tenký prúžok nabitia.
+// Používa sa pre režim s percentami aj pre režim so zostávajúcim časom.
+func drawTextIcon(c *canvas, s Spec, k float64, text string) {
 	fg := s.textColor()
-	n := int(math.Round(clamp(s.Percent, 0, 100)))
-	digits := itoa(n)
+	size := float64(c.size)
 
-	// Číslice sa kreslia na celé pixely a s celočíselnou mierkou, inak sú
-	// pri 16 px rozmazané a nečitateľné.
-	scale := math.Max(1, math.Round(k))
-	f := &font5x8
-	if len(digits) == 3 {
-		f = &font3x5
-	}
-	gw := float64(f.w) * scale
-	gh := float64(f.h) * scale
-	gap := scale
-	w := gw*float64(len(digits)) + gap*float64(len(digits)-1)
-
+	// Prúžok nabitia je dole, text vypĺňa zvyšok.
 	barH := math.Max(2, math.Round(1.6*k))
-	barY1 := float64(c.size) - math.Max(1, math.Round(0.9*k))
+	barY1 := size - math.Max(1, math.Round(0.9*k))
 	barY0 := barY1 - barH
 
-	x := math.Round((float64(c.size) - w) / 2)
-	y := math.Round((barY0 - gh) / 2)
-	for i, d := range digits {
-		f.draw(c, x+float64(i)*(gw+gap), y, scale, int(d-'0'), fg)
+	margin := math.Max(1, math.Round(0.8*k))
+	if f, scale := fitText(text, size-2*margin, barY0-margin); f != nil {
+		w := float64(f.width(text)) * scale
+		h := float64(f.h) * scale
+		// Celé súradnice: bitmapové písmo musí sedieť na mriežke pixelov.
+		x := math.Round((size - w) / 2)
+		y := math.Round((barY0 - h) / 2)
+		f.draw(c, x, y, scale, text, fg)
 	}
 
-	// Prúžok nabitia pod číslom.
 	x0 := math.Round(1.5 * k)
-	x1 := float64(c.size) - x0
+	x1 := size - x0
 	track := s.Theme.FG
 	track.A = 70
 	c.fill(box{x0: x0, y0: barY0, x1: x1, y1: barY1, r: barH / 2}, track)
@@ -194,12 +227,8 @@ func drawPercent(c *canvas, s Spec, k float64) {
 		}
 		c.fill(box{x0: x0, y0: barY0, x1: x0 + wBar, y1: barY1, r: barH / 2}, fg)
 	}
-	if s.Charging {
-		// Malý blesk v rohu, aby bolo nabíjanie vidieť aj bez obrysu batérie.
-		b := boltPath(float64(c.size)-2.6*k, 0.4*k, 2.6*k, 5.2*k)
-		c.erasePoly(b, 0.7*k)
-		c.fillPoly(b, s.Theme.Accent)
-	}
+	// Blesk sa sem zámerne nekreslí: pri 16 px by prekryl poslednú číslicu.
+	// Nabíjanie ukazuje zelená farba textu aj prúžku.
 }
 
 // --- kreslenie ---------------------------------------------------------

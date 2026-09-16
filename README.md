@@ -1,10 +1,8 @@
 # Batéria
 
-Ikona batérie v oznamovacej oblasti Windowsu (vpravo dole pri hodinách), ktorá
-navyše ukazuje **čas do plného nabitia** a **čas do vybitia**.
-
-Vyzerá zhruba ako vstavaná ikona Windowsu, ale po nabehnutí myšou a po
-kliknutí povie to, čo Windows sám nepovie.
+Ikona v oznamovacej oblasti Windowsu (vpravo dole pri hodinách), ktorá
+priamo v paneli ukazuje **čas do plného nabitia** a **čas do vybitia** –
+teda `2:13` namiesto `55 %`. To, čo Windows sám nepovie.
 
 ![Ikony vo všetkých stavoch](docs/ikony.png)
 
@@ -33,9 +31,14 @@ spúšťanie s Windowsom a ukončenie.
 
 ### Vzhľad ikony
 
-Na výber sú tri režimy (ponuka pravého tlačidla):
+Na výber sú štyri režimy (ponuka pravého tlačidla):
 
-* **ako vo Windowse** (predvolené) – použije sa ten istý znak, akým kreslí
+* **zostávajúci čas** (predvolené) – čas priamo v paneli: `2:13` sú dve
+  hodiny a trinásť minút, `0:45` tri štvrte hodiny. Od desiatich hodín
+  vyššie ostane len `12h`, minúty tam aj tak nikoho nezaujímajú. Kým odhad
+  nie je hotový, ukáže sa percento. Pod textom je tenký prúžok nabitia,
+  ktorý pri nabíjaní zozelenie, pod 20 % zožltne a pod 10 % sčervenie.
+* **ako vo Windowse** – použije sa ten istý znak, akým kreslí
   ikonu batérie samotný panel úloh: `Segoe Fluent Icons` vo Windowse 11,
   `Segoe MDL2 Assets` vo Windowse 10. Znak sa vykreslí cez GDI, alfa sa
   odvodí z jasu a výsledok sa podľa skutočného obrysu umiestni na stred
@@ -122,14 +125,14 @@ Uložené sú v `%APPDATA%\Bateria\config.json`:
 
 ```json
 {
-  "icon_mode": "system",
+  "icon_mode": "time",
   "refresh_seconds": 2
 }
 ```
 
-* `icon_mode` – `system` (znak zo systémového písma, predvolené),
-  `battery` (vlastná kreslená ikona) alebo `percent` (číslo v paneli).
-  Prepína sa aj v ponuke pravého tlačidla.
+* `icon_mode` – `time` (zostávajúci čas, predvolené), `system` (znak zo
+  systémového písma), `battery` (vlastná kreslená ikona) alebo `percent`
+  (číslo v paneli). Prepína sa aj v ponuke pravého tlačidla.
 * `refresh_seconds` – ako často sa meria (1 až 60 sekúnd).
 
 Pri poškodenom súbore sa použijú predvolené hodnoty; aplikácia sa kvôli
@@ -148,7 +151,10 @@ takže sa o to pokúsi dve sekundy po štarte a v prípade potreby to ešte
 párkrát zopakuje. Mení len svoj vlastný záznam a len raz: keď si ju
 používateľ neskôr schová, aplikácia mu to späť neprepíše.
 
-Ručne sa to dá kedykoľvek prepnúť v ponuke pravého tlačidla položkou
+Najistejšie je **potiahnuť ikonu myšou** z ponuky pod šípkou priamo na panel
+úloh – Windows si to zapamätá okamžite a bez odhlásenia.
+
+Ručne sa to dá prepnúť aj v ponuke pravého tlačidla položkou
 **Zobraziť ikonu vždy v paneli**, prípadne v *Nastavenia → Prispôsobenie →
 Panel úloh → Iné ikony na systémovej lište*. Ak sa zmena neprejaví hneď,
 pomôže odhlásenie a prihlásenie do Windowsu.

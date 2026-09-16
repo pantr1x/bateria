@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"testing"
+	"time"
 )
 
 func alphaAt(img *image.NRGBA, x, y int) uint8 {
@@ -185,5 +186,51 @@ func TestMaskImageTooShortIsSafe(t *testing.T) {
 			t.Error("krátka maska sa nesmie čítať mimo rozsahu")
 			break
 		}
+	}
+}
+
+func TestTimeText(t *testing.T) {
+	cases := []struct {
+		remaining time.Duration
+		percent   float64
+		want      string
+	}{
+		{2*time.Hour + 13*time.Minute, 60, "2:13"},
+		{45 * time.Minute, 30, "0:45"},
+		{9*time.Hour + 59*time.Minute, 90, "9:59"},
+		{10 * time.Hour, 95, "10h"},
+		{12*time.Hour + 30*time.Minute, 99, "12h"},
+		{0, 73, "73%"}, // odhad zatiaľ nie je
+		{-time.Minute, 5, "5%"},
+		{90 * time.Second, 50, "0:02"}, // zaokrúhľuje sa na minúty
+	}
+	for _, c := range cases {
+		if got := TimeText(c.remaining, c.percent); got != c.want {
+			t.Errorf("TimeText(%v, %.0f) = %q, chcem %q", c.remaining, c.percent, got, c.want)
+		}
+	}
+}
+
+// Text sa musí zmestiť do ikony aj v tej najmenšej veľkosti.
+func TestTimeTextFitsInIcon(t *testing.T) {
+	for _, size := range []int{16, 20, 24, 32} {
+		for _, text := range []string{"2:13", "10h", "100", "73%", "0:45"} {
+			f, scale := fitText(text, float64(size)-2, float64(size)-5)
+			if f == nil {
+				t.Errorf("veľkosť %d: text %q sa nezmestil", size, text)
+				continue
+			}
+			if w := float64(f.width(text)) * scale; w > float64(size)-2 {
+				t.Errorf("veľkosť %d: text %q má šírku %.0f", size, text, w)
+			}
+		}
+	}
+}
+
+func TestTimeModeDrawsSomething(t *testing.T) {
+	img := Render(Spec{Size: 16, Mode: ModeTime, Theme: DarkTaskbar(),
+		Percent: 60, Present: true, Remaining: 2*time.Hour + 13*time.Minute})
+	if coverage(img) < 10 {
+		t.Errorf("čas sa nevykreslil (pokrytie %.1f)", coverage(img))
 	}
 }

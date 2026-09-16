@@ -276,7 +276,7 @@ func (p *popup) bigIcon() uintptr {
 	light := win.AppsUseLightTheme()
 	// V okne dáva zmysel obrys batérie aj vtedy, keď je v paneli číslo.
 	mode := p.a.cfg.IconMode
-	if mode == config.IconPercent {
+	if mode == config.IconPercent || mode == config.IconTime {
 		mode = config.IconSystem
 	}
 	key := fmt.Sprintf("%d|%d|%v|%v|%v|%s", size, int(math.Round(st.Percent)),
