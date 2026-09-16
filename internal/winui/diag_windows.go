@@ -64,6 +64,11 @@ func Diagnose() string {
 		line("Tok energie z ovládača: známy=%v, %.0f mW", st.RateKnown, st.Rate)
 		line("Zdroj odhadu: %s", st.Estimate)
 	}
+	if win.PanelRunning() {
+		line("Text v paneli úloh: program beží")
+	} else {
+		line("Text v paneli úloh: program nebeží")
+	}
 	line("")
 
 	size := trayIconSize()

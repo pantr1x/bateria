@@ -4,7 +4,7 @@
 GOFLAGS := -trimpath
 LDFLAGS := -H=windowsgui -s -w
 
-.PHONY: all test vet build build-arm64 icons clean
+.PHONY: all test vet build build-arm64 icons panel clean
 
 all: test build
 
@@ -24,6 +24,13 @@ build-arm64:
 # Prekreslí assets/app.ico a docs/ikony.png zo zdrojového kódu ikony.
 icons:
 	go run ./cmd/icongen
+
+# Preloží program, ktorý kreslí text priamo v paneli úloh. Výsledok je
+# zabalený v hlavnom programe, preto je v repozitári aj preložený – bez
+# MinGW sa teda dá projekt zostaviť aj tak.
+panel:
+	x86_64-w64-mingw32-g++ -O2 -s -static -mwindows -municode -Wall \
+		-o internal/panelbin/bateria-panel.exe panel/panel.cpp -lgdi32
 
 clean:
 	rm -rf dist

@@ -29,6 +29,33 @@ sa batéria vybíjala naposledy.
 **Kliknutie pravým tlačidlom** otvorí ponuku: prepnutie vzhľadu ikony,
 spúšťanie s Windowsom a ukončenie.
 
+### Text priamo v paneli úloh
+
+Okrem ikony vypisuje aplikácia zostávajúci čas aj ako **text priamo v paneli
+úloh** (`2 h 13 min`), aby bol čitateľný na prvý pohľad. Kreslí ho samostatný
+program `bateria-panel.exe`, ktorý je zabalený v hlavnom programe a pri prvom
+spustení sa rozbalí vedľa nastavení.
+
+Jeho okno je **potomkom okna panela úloh** (`Shell_TrayWnd`), nie voľne
+plávajúcim oknom navrchu: Windows ho oreže na plochu panela, posúva ho spolu
+s ním, skryje ho, keď sa panel skryje, a zruší ho, keď panel zanikne.
+
+* **Posunutie:** podržať `Ctrl` a potiahnuť text myšou. Poloha sa uloží
+  a drží sa pravého okraja panela, takže sa nehýbe, keď pribudnú ikony vľavo.
+* **Bez `Ctrl`** je text pre myš priehľadný – kliknutia idú tomu, čo je pod
+  ním, takže nič neprekáža.
+* **Pravé tlačidlo** otvorí rovnakú ponuku ako ikona.
+* Vypnúť sa dá v ponuke položkou *Text v paneli úloh*. Keď je zapnutý, ikona
+  ukazuje obrys batérie, aby sa ten istý údaj nezobrazoval dvakrát.
+
+Je to zámerne samostatný program, nie súčasť hlavnej aplikácie: okno potomka
+cudzieho procesu zdieľa s panelom vstupnú frontu, takže čokoľvek pomalé v tom
+vlákne by spomalilo aj panel úloh. Tento program preto nerobí nič iné, než že
+kreslí text, ktorý dostane – žiadne čítanie batérie, žiadne súbory, žiadne
+čakanie.
+
+Text sa zobrazuje len na hlavnom paneli úloh; na ďalších monitoroch zatiaľ nie.
+
 ### Vzhľad ikony
 
 Na výber sú štyri režimy (ponuka pravého tlačidla):
@@ -81,6 +108,8 @@ Prvú minútu po spustení môže byť namiesto času napísané `Čas sa ešte 
 
 Treba [Go 1.22+](https://go.dev/dl/). Žiadne ďalšie knižnice – projekt nemá
 jedinú externú závislosť, takže `go build` funguje aj bez internetu.
+Preložený `bateria-panel.exe` je v repozitári, takže na zostavenie netreba ani
+prekladač C++; prekresliť sa dá cez `make panel` (vyžaduje MinGW).
 
 Vo Windowse:
 
@@ -186,12 +215,14 @@ antivírus alebo SmartScreen – program nie je podpísaný certifikátom.
 ## Ako je to poskladané
 
 ```
+panel/panel.cpp  program, ktorý kreslí text v paneli úloh (C++, MinGW)
 cmd/bateria      spustiteľný program
 cmd/icongen      vygeneruje assets/app.ico a docs/ikony.png zo zdrojáku ikony
 internal/battery stav batérie + odhady časov (jadro, plne otestované)
 internal/icon    kreslenie ikony (SDF, vyhladené hrany, ostré číslice),
                  mapovanie stavu na znak systémového písma a práca s maskou
 internal/config  nastavenia
+internal/panelbin  zabalený bateria-panel.exe + jeho rozbalenie
 internal/win     tenká vrstva nad Win32 API (bez externých závislostí)
 internal/winui   ikona v paneli, ponuka, okno s podrobnosťami
 ```

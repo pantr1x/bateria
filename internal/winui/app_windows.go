@@ -36,6 +36,7 @@ const (
 	cmdModeBattery
 	cmdModePercent
 	cmdAutostart
+	cmdPanel
 	cmdPromote
 	cmdExit
 )
@@ -57,6 +58,11 @@ type App struct {
 	menuOpen       bool
 	promoteTries   int
 
+	// Text v paneli úloh kreslí samostatný program; panelActive hovorí,
+	// či sa s ním práve darí komunikovať.
+	panelActive bool
+	panelRetry  time.Time
+
 	// Stav batérie sa číta v samostatnej úlohe: volania ovládača idú cez
 	// systém a pri chybnom ovládači vedia trvať. Keby bežali vo vlákne
 	// okna, aplikácia by na ten čas prestala reagovať na kliknutia –
@@ -75,6 +81,10 @@ var (
 	// používateľ spustí program znova, bežiaca inštancia otvorí okno
 	// s podrobnosťami – inak by sa zdalo, že kliknutie nič neurobilo.
 	msgShowWindow = win.RegisterWindowMessage("BateriaShowWindow")
+
+	// msgPanelEvent hlási, že používateľ klikol na text v paneli úloh
+	// alebo ho posunul.
+	msgPanelEvent = win.RegisterWindowMessage(win.PanelEventMessage)
 )
 
 // Run spustí aplikáciu a vráti sa, až keď sa ukončí.
@@ -148,6 +158,7 @@ func Run() error {
 		// preto sa o vytiahnutie z prepadovej ponuky pokúsime až o chvíľu.
 		win.SetTimer(a.hwnd, timerPromote, 2000)
 	}
+	a.startPanel()
 	win.SetTimer(a.hwnd, timerRefresh, uint32(a.cfg.RefreshSeconds)*1000)
 
 	win.RunMessageLoop()
@@ -223,11 +234,26 @@ func trayWndProc(hwnd win.HWND, msg uint32, wparam, lparam uintptr) uintptr {
 		return 1
 
 	case win.WMDestroy:
+		a.stopPanel()
 		a.saveDrain()
 		a.tray.Remove()
 		win.PostQuit(0)
 		return 0
 	}
+	if msgPanelEvent != 0 && msg == msgPanelEvent {
+		switch wparam {
+		case win.PanelEventMenu:
+			a.showMenu()
+		case win.PanelEventOffset:
+			// Používateľ potiahol text po paneli – zapamätáme si polohu.
+			if off := int(int32(lparam)); off >= 0 && off <= 4000 {
+				a.cfg.PanelOffset = off
+				a.saveConfig()
+			}
+		}
+		return 0
+	}
+
 	// Druhé spustenie programu: ukážeme, že aplikácia beží.
 	// Porovnanie musí byť mimo switchu a s kontrolou na nulu – keby sa
 	// správa nezaregistrovala, splynula by s prázdnou správou WM_NULL.
@@ -301,6 +327,7 @@ func (a *App) applyReading() {
 	if prev == battery.StateDischarging && st.State != battery.StateDischarging {
 		a.saveDrain()
 	}
+	a.updatePanel()
 	a.updateIcon()
 	if a.popup != nil && a.popup.visible {
 		a.popup.refresh()
@@ -313,12 +340,17 @@ func (a *App) updateIcon() {
 	size := trayIconSize()
 	light := win.TaskbarUsesLightTheme()
 	remaining := iconRemaining(a.status).Round(time.Minute)
-	key := fmt.Sprintf("%d|%v|%s|%d|%v|%v|%v", size, light, a.cfg.IconMode,
+	// Keď čas vypisuje panel úloh, ikona ho neopakuje a ukáže obrys batérie.
+	mode := a.cfg.IconMode
+	if a.panelActive && mode == config.IconTime {
+		mode = config.IconSystem
+	}
+	key := fmt.Sprintf("%d|%v|%s|%d|%v|%v|%v", size, light, mode,
 		int(math.Round(a.status.Percent)), a.status.State == battery.StateCharging,
 		a.status.Present, remaining)
 
 	if key != a.iconKey || a.iconHandle == 0 {
-		img := iconImage(a.status, size, a.cfg.IconMode, light)
+		img := iconImage(a.status, size, mode, light)
 		if h := win.CreateIconFromResource(icon.EncodeResource(img), size, size); h != 0 {
 			a.iconHandle = h
 			a.iconKey = key
@@ -446,6 +478,7 @@ func (a *App) showMenu() {
 	m.Item(cmdModeBattery, "Ikona: vlastná", a.cfg.IconMode == config.IconBattery, false)
 	m.Item(cmdModePercent, "Ikona: percentá", a.cfg.IconMode == config.IconPercent, false)
 	m.Separator()
+	m.Item(cmdPanel, "Text v paneli úloh", !a.cfg.PanelDisabled, false)
 	m.Item(cmdAutostart, "Spúšťať s Windowsom", win.AutostartEnabled(), false)
 	m.Item(cmdPromote, "Zobraziť ikonu vždy v paneli", a.iconPromoted(), false)
 	m.Separator()
@@ -468,6 +501,8 @@ func (a *App) command(id uint32) {
 		a.setIconMode(config.IconBattery)
 	case cmdModePercent:
 		a.setIconMode(config.IconPercent)
+	case cmdPanel:
+		a.togglePanel()
 	case cmdAutostart:
 		a.toggleAutostart()
 	case cmdPromote:
@@ -558,6 +593,21 @@ func (a *App) saveConfig() {
 	if a.cfgPath != "" {
 		_ = config.Save(a.cfgPath, a.cfg)
 	}
+}
+
+// togglePanel zapne alebo vypne text priamo v paneli úloh.
+func (a *App) togglePanel() {
+	a.cfg.PanelDisabled = !a.cfg.PanelDisabled
+	a.saveConfig()
+	if a.cfg.PanelDisabled {
+		a.stopPanel()
+	} else {
+		a.panelRetry = time.Time{}
+		a.startPanel()
+		a.updatePanel()
+	}
+	a.iconKey = ""
+	a.updateIcon()
 }
 
 func (a *App) toggleAutostart() {
