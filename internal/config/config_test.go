@@ -25,7 +25,7 @@ func TestLoadBrokenFileGivesDefaults(t *testing.T) {
 
 func TestSaveLoadRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "podpriecinok", "config.json")
-	want := Config{IconMode: IconPercent, RefreshSeconds: 5, PanelGap: 240}
+	want := Config{IconMode: IconPercent, RefreshSeconds: 5}
 	if err := Save(p, want); err != nil {
 		t.Fatal(err)
 	}
@@ -34,26 +34,21 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 }
 
-// Nezmyselné hodnoty zo súboru sa nesmú dostať do behu aplikácie.
-// Text v paneli je zapnutý, kým ho niekto výslovne nevypne – aj v starých
+// Text v hodinách je zapnutý, kým ho niekto výslovne nevypne – aj v starých
 // súboroch s nastaveniami, ktoré o ňom nič nevedia.
-func TestPanelEnabledByDefault(t *testing.T) {
+func TestClockTextEnabledByDefault(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(p, []byte(`{"icon_mode":"time"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := Load(p)
-	if got.PanelDisabled {
-		t.Error("text v paneli mal zostať zapnutý")
-	}
-	if got.PanelGap != Default().PanelGap {
-		t.Errorf("medzera = %d, chcem predvolenú %d", got.PanelGap, Default().PanelGap)
+	if Load(p).ClockTextDisabled {
+		t.Error("text v hodinách mal zostať zapnutý")
 	}
 }
 
 func TestLoadRejectsOutOfRange(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(p, []byte(`{"icon_mode":"hviezda","refresh_seconds":9999,"panel_gap":99999}`), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(`{"icon_mode":"hviezda","refresh_seconds":9999}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got := Load(p)
@@ -62,8 +57,5 @@ func TestLoadRejectsOutOfRange(t *testing.T) {
 	}
 	if got.RefreshSeconds != Default().RefreshSeconds {
 		t.Errorf("neplatná perióda sa mala zahodiť, je %d", got.RefreshSeconds)
-	}
-	if got.PanelGap != Default().PanelGap {
-		t.Errorf("neplatná medzera sa mala zahodiť, je %d", got.PanelGap)
 	}
 }

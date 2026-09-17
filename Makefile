@@ -4,7 +4,7 @@
 GOFLAGS := -trimpath
 LDFLAGS := -H=windowsgui -s -w
 
-.PHONY: all test vet build build-arm64 icons panel clean
+.PHONY: all test vet build build-arm64 icons hook clean
 
 all: test build
 
@@ -25,12 +25,13 @@ build-arm64:
 icons:
 	go run ./cmd/icongen
 
-# Preloží program, ktorý kreslí text priamo v paneli úloh. Výsledok je
-# zabalený v hlavnom programe, preto je v repozitári aj preložený – bez
-# MinGW sa teda dá projekt zostaviť aj tak.
-panel:
-	x86_64-w64-mingw32-g++ -O2 -s -static -mwindows -municode -Wall \
-		-o internal/panelbin/bateria-panel.exe panel/panel.cpp -lgdi32
+# Preloží bateria-hook.dll – knižnicu, ktorá vloží čas priamo do hodín
+# v paneli úloh (vkladá sa do explorer.exe cez SetWindowsHookEx). Používateľ
+# si ju prekladá sám podľa taskbarclock/README.md; toto je len skratka pre
+# vývoj s nainštalovaným MinGW.
+hook:
+	x86_64-w64-mingw32-g++ -O2 -s -shared -static -municode \
+		-o taskbarclock/bateria-hook.dll taskbarclock/hook.cpp -lkernel32 -luser32
 
 clean:
 	rm -rf dist

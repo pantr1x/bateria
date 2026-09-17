@@ -64,10 +64,13 @@ func Diagnose() string {
 		line("Tok energie z ovládača: známy=%v, %.0f mW", st.RateKnown, st.Rate)
 		line("Zdroj odhadu: %s", st.Estimate)
 	}
-	if win.PanelRunning() {
-		line("Text v paneli úloh: program beží")
-	} else {
-		line("Text v paneli úloh: program nebeží")
+	switch {
+	case !win.HookDLLPresent():
+		line("Čas v hodinách: %s nie je vedľa programu (treba ju preložiť)", win.HookDLLName)
+	case win.ClockShareReady():
+		line("Čas v hodinách: knižnica pripravená, zdieľaná pamäť beží")
+	default:
+		line("Čas v hodinách: knižnica je, ale zdieľanú pamäť sa nepodarilo otvoriť")
 	}
 	line("")
 

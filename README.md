@@ -29,31 +29,33 @@ sa batéria vybíjala naposledy.
 **Kliknutie pravým tlačidlom** otvorí ponuku: prepnutie vzhľadu ikony,
 spúšťanie s Windowsom a ukončenie.
 
-### Text priamo v paneli úloh
+### Čas priamo v hodinách panela (voliteľné, treba raz preložiť)
 
-Okrem ikony vypisuje aplikácia zostávajúci čas aj ako **text priamo v paneli
-úloh** (`2 h 13 min`), aby bol čitateľný na prvý pohľad. Kreslí ho samostatný
-program `bateria-panel.exe`, ktorý je zabalený v hlavnom programe a pri prvom
-spustení sa rozbalí vedľa nastavení.
+Zostávajúci čas vie aplikácia vložiť **priamo do hodín** v paneli úloh (vedľa
+dátumu, `2 h 13 min`) – nie ako samostatná ikona a nie ako okno prilepené
+navrch. Rovnaký princíp používa nástroj Windhawk: do Prieskumníka
+(`explorer.exe`) sa zavedie malá knižnica `bateria-hook.dll`, ktorá presmeruje
+verejné funkcie `GetLocalTime` a `GetTimeFormatEx` (tie panel volá pri skladaní
+textu hodín) a pred čas vloží náš text. Nič sa neprepisuje v kóde Windowsu a
+všetko je vratné.
 
-Jeho okno je **potomkom okna panela úloh** (`Shell_TrayWnd`), nie voľne
-plávajúcim oknom navrchu: Windows ho oreže na plochu panela, posúva ho spolu
-s ním, skryje ho, keď sa panel skryje, a zruší ho, keď panel zanikne.
+Táto knižnica sa **nerozdáva hotová** – nie je podpísaná, preto si ju treba raz
+preložiť. Návod krok za krokom (jeden príkaz) je v
+[`taskbarclock/README.md`](taskbarclock/README.md). Potom stačí `bateria-hook.dll`
+položiť vedľa `bateria.exe`; aplikácia ju sama zavedie a začne písať do hodín.
+Prepínač *Čas v hodinách panela* v ponuke pravého tlačidla to zapne/vypne,
+`bateria.exe -diag` ukáže stav. Kým čas píšu hodiny, ikona ukazuje obrys
+batérie, aby sa údaj nezdvojoval.
 
-**Polohu si okno hľadá samo** – umiestni sa tesne naľavo od systémovej oblasti
-(wifi/zvuk/batéria a hodiny), takže text vyjde hneď vedľa nej. Nič netreba
-ťahať. Pozadie si odkukne z panela, takže splynie pri tmavom, svetlom aj
-priehľadnom paneli. Pravé tlačidlo otvorí rovnakú ponuku ako ikona; vypnúť sa
-dá v ponuke položkou *Text v paneli úloh*. Kým je text v paneli vidno, ikona
-ukazuje obrys batérie, aby sa ten istý údaj nezobrazoval dvakrát.
+Kým knižnica preložená nie je, aplikácia funguje ako doteraz – čas vidno
+v samotnej ikone (`2:13`). Vloženie do hodín je teda príjemný bonus, nie
+podmienka.
 
-Je to zámerne samostatný program, nie súčasť hlavnej aplikácie: okno potomka
-cudzieho procesu zdieľa s panelom vstupnú frontu, takže čokoľvek pomalé v tom
-vlákne by spomalilo aj panel úloh. Tento program preto nerobí nič iné, než že
-kreslí text, ktorý dostane – žiadne čítanie batérie, žiadne súbory, žiadne
-čakanie.
-
-Text sa zobrazuje len na hlavnom paneli úloh; na ďalších monitoroch zatiaľ nie.
+> **Prečo to takto.** Prepísať text hodín zvonku sa vo Windows nedá; jediná
+> cesta je spustiť vlastný kód vnútri `explorer.exe`. Je to legitímna, no
+> citlivá technika (antivírus ju môže označiť za podozrivú). Keby sa hodiny
+> správali divne, stačí v Správcovi úloh reštartovať *Prieskumník Windows* –
+> po ňom je systém v pôvodnom stave, zmeny žijú len v pamäti bežiaceho procesu.
 
 ### Vzhľad ikony
 
@@ -107,8 +109,9 @@ Prvú minútu po spustení môže byť namiesto času napísané `Čas sa ešte 
 
 Treba [Go 1.22+](https://go.dev/dl/). Žiadne ďalšie knižnice – projekt nemá
 jedinú externú závislosť, takže `go build` funguje aj bez internetu.
-Preložený `bateria-panel.exe` je v repozitári, takže na zostavenie netreba ani
-prekladač C++; prekresliť sa dá cez `make panel` (vyžaduje MinGW).
+Voliteľnú knižnicu pre čas v hodinách (`bateria-hook.dll`) si prekladá
+používateľ zvlášť podľa [`taskbarclock/README.md`](taskbarclock/README.md);
+hlavná aplikácia sa zostaví aj bez nej.
 
 Vo Windowse:
 
@@ -214,15 +217,15 @@ antivírus alebo SmartScreen – program nie je podpísaný certifikátom.
 ## Ako je to poskladané
 
 ```
-panel/panel.cpp  program, ktorý kreslí text v paneli úloh (C++, MinGW)
+taskbarclock/    bateria-hook.dll: čas priamo v hodinách (C++, prekladá používateľ)
 cmd/bateria      spustiteľný program
 cmd/icongen      vygeneruje assets/app.ico a docs/ikony.png zo zdrojáku ikony
 internal/battery stav batérie + odhady časov (jadro, plne otestované)
 internal/icon    kreslenie ikony (SDF, vyhladené hrany, ostré číslice),
                  mapovanie stavu na znak systémového písma a práca s maskou
 internal/config  nastavenia
-internal/panelbin  zabalený bateria-panel.exe + jeho rozbalenie
-internal/win     tenká vrstva nad Win32 API (bez externých závislostí)
+internal/win     tenká vrstva nad Win32 API (bez externých závislostí),
+                 zavedenie knižnice do hodín + zdieľaná pamäť s textom
 internal/winui   ikona v paneli, ponuka, okno s podrobnosťami
 ```
 

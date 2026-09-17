@@ -30,12 +30,10 @@ type Config struct {
 	// počítač vydržal po odpojení – inak by sa to učila odznova.
 	DrainPerHour      float64 `json:"drain_per_hour"`
 	DrainUsesCapacity bool    `json:"drain_uses_capacity"`
-	// PanelDisabled vypína text priamo v paneli úloh. Je to záporná voľba,
-	// aby staršie súbory s nastaveniami mali text zapnutý.
-	PanelDisabled bool `json:"panel_disabled"`
-	// PanelGap je medzera medzi textom a systémovou oblasťou (wifi/zvuk/
-	// batéria) v bodoch. Poloha textu je inak automatická.
-	PanelGap int `json:"panel_gap"`
+	// ClockTextDisabled vypína vloženie času priamo do hodín v paneli úloh
+	// (cez bateria-hook.dll). Je to záporná voľba, aby staršie súbory s
+	// nastaveniami mali text zapnutý.
+	ClockTextDisabled bool `json:"clock_text_disabled"`
 	// TrayPromoted si pamätá, že sme ikonu už raz vytiahli z prepadovej
 	// ponuky do panela úloh. Druhý raz to aplikácia nerobí – keby si ju
 	// používateľ medzitým schoval, nemá mu to prepisovať späť.
@@ -44,7 +42,7 @@ type Config struct {
 
 // Default vráti predvolené nastavenia.
 func Default() Config {
-	return Config{IconMode: IconTime, RefreshSeconds: 2, PanelGap: 8}
+	return Config{IconMode: IconTime, RefreshSeconds: 2}
 }
 
 // Path vráti cestu k súboru s nastaveniami (%APPDATA%\Bateria\config.json).
@@ -76,10 +74,7 @@ func Load(path string) Config {
 		c.RefreshSeconds = loaded.RefreshSeconds
 	}
 	c.TrayPromoted = loaded.TrayPromoted
-	c.PanelDisabled = loaded.PanelDisabled
-	if loaded.PanelGap > 0 && loaded.PanelGap <= 400 {
-		c.PanelGap = loaded.PanelGap
-	}
+	c.ClockTextDisabled = loaded.ClockTextDisabled
 	if loaded.DrainPerHour > 0 {
 		c.DrainPerHour = loaded.DrainPerHour
 		c.DrainUsesCapacity = loaded.DrainUsesCapacity

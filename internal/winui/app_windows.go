@@ -36,7 +36,7 @@ const (
 	cmdModeBattery
 	cmdModePercent
 	cmdAutostart
-	cmdPanel
+	cmdClockText
 	cmdPromote
 	cmdExit
 )
@@ -58,10 +58,10 @@ type App struct {
 	menuOpen       bool
 	promoteTries   int
 
-	// Text v paneli úloh kreslí samostatný program; panelActive hovorí,
-	// či sa s ním práve darí komunikovať.
-	panelActive bool
-	panelRetry  time.Time
+	// Čas v hodinách panela vkladá knižnica bateria-hook.dll zavedená do
+	// Prieskumníka; clockHook drží zavedený hák, clockActive hovorí, či beží.
+	clockHook   *win.ClockHook
+	clockActive bool
 
 	// Stav batérie sa číta v samostatnej úlohe: volania ovládača idú cez
 	// systém a pri chybnom ovládači vedia trvať. Keby bežali vo vlákne
@@ -81,10 +81,6 @@ var (
 	// používateľ spustí program znova, bežiaca inštancia otvorí okno
 	// s podrobnosťami – inak by sa zdalo, že kliknutie nič neurobilo.
 	msgShowWindow = win.RegisterWindowMessage("BateriaShowWindow")
-
-	// msgPanelEvent hlási, že používateľ klikol na text v paneli úloh
-	// alebo ho posunul.
-	msgPanelEvent = win.RegisterWindowMessage(win.PanelEventMessage)
 )
 
 // Run spustí aplikáciu a vráti sa, až keď sa ukončí.
@@ -158,7 +154,7 @@ func Run() error {
 		// preto sa o vytiahnutie z prepadovej ponuky pokúsime až o chvíľu.
 		win.SetTimer(a.hwnd, timerPromote, 2000)
 	}
-	a.startPanel()
+	a.installClock()
 	win.SetTimer(a.hwnd, timerRefresh, uint32(a.cfg.RefreshSeconds)*1000)
 
 	win.RunMessageLoop()
@@ -234,16 +230,10 @@ func trayWndProc(hwnd win.HWND, msg uint32, wparam, lparam uintptr) uintptr {
 		return 1
 
 	case win.WMDestroy:
-		a.stopPanel()
+		a.clockHook.Remove()
 		a.saveDrain()
 		a.tray.Remove()
 		win.PostQuit(0)
-		return 0
-	}
-	if msgPanelEvent != 0 && msg == msgPanelEvent {
-		if wparam == win.PanelEventMenu {
-			a.showMenu()
-		}
 		return 0
 	}
 
@@ -320,7 +310,7 @@ func (a *App) applyReading() {
 	if prev == battery.StateDischarging && st.State != battery.StateDischarging {
 		a.saveDrain()
 	}
-	a.updatePanel()
+	a.updateClock()
 	a.updateIcon()
 	if a.popup != nil && a.popup.visible {
 		a.popup.refresh()
@@ -333,9 +323,9 @@ func (a *App) updateIcon() {
 	size := trayIconSize()
 	light := win.TaskbarUsesLightTheme()
 	remaining := iconRemaining(a.status).Round(time.Minute)
-	// Keď čas vypisuje panel úloh, ikona ho neopakuje a ukáže obrys batérie.
+	// Keď čas vypisujú hodiny panela, ikona ho neopakuje a ukáže obrys batérie.
 	mode := a.cfg.IconMode
-	if a.panelActive && mode == config.IconTime {
+	if a.clockActive && mode == config.IconTime {
 		mode = config.IconSystem
 	}
 	key := fmt.Sprintf("%d|%v|%s|%d|%v|%v|%v", size, light, mode,
@@ -471,7 +461,9 @@ func (a *App) showMenu() {
 	m.Item(cmdModeBattery, "Ikona: vlastná", a.cfg.IconMode == config.IconBattery, false)
 	m.Item(cmdModePercent, "Ikona: percentá", a.cfg.IconMode == config.IconPercent, false)
 	m.Separator()
-	m.Item(cmdPanel, "Text v paneli úloh", !a.cfg.PanelDisabled, false)
+	if win.HookDLLPresent() {
+		m.Item(cmdClockText, "Čas v hodinách panela", !a.cfg.ClockTextDisabled, false)
+	}
 	m.Item(cmdAutostart, "Spúšťať s Windowsom", win.AutostartEnabled(), false)
 	m.Item(cmdPromote, "Zobraziť ikonu vždy v paneli", a.iconPromoted(), false)
 	m.Separator()
@@ -494,8 +486,8 @@ func (a *App) command(id uint32) {
 		a.setIconMode(config.IconBattery)
 	case cmdModePercent:
 		a.setIconMode(config.IconPercent)
-	case cmdPanel:
-		a.togglePanel()
+	case cmdClockText:
+		a.toggleClockText()
 	case cmdAutostart:
 		a.toggleAutostart()
 	case cmdPromote:
@@ -588,16 +580,35 @@ func (a *App) saveConfig() {
 	}
 }
 
-// togglePanel zapne alebo vypne text priamo v paneli úloh.
-func (a *App) togglePanel() {
-	a.cfg.PanelDisabled = !a.cfg.PanelDisabled
+// installClock zavedie knižnicu s časom do Prieskumníka, ak je prítomná
+// a v nastaveniach zapnutá.
+func (a *App) installClock() {
+	if a.cfg.ClockTextDisabled || a.clockHook != nil {
+		return
+	}
+	a.clockHook = win.InstallClockHook()
+}
+
+// updateClock zapíše aktuálny text pre hodiny do zdieľanej pamäte.
+func (a *App) updateClock() {
+	enabled := !a.cfg.ClockTextDisabled && a.clockHook.Active()
+	a.clockActive = enabled && win.WriteClockText(clockText(a.status), true)
+	if !enabled {
+		win.WriteClockText("", false)
+	}
+}
+
+// toggleClockText zapne alebo vypne vloženie času do hodín panela.
+func (a *App) toggleClockText() {
+	a.cfg.ClockTextDisabled = !a.cfg.ClockTextDisabled
 	a.saveConfig()
-	if a.cfg.PanelDisabled {
-		a.stopPanel()
+	if a.cfg.ClockTextDisabled {
+		a.clockHook.Remove()
+		a.clockHook = nil
+		a.clockActive = false
 	} else {
-		a.panelRetry = time.Time{}
-		a.startPanel()
-		a.updatePanel()
+		a.installClock()
+		a.updateClock()
 	}
 	a.iconKey = ""
 	a.updateIcon()
